@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
-use super::Database;
+use super::{parse_ts, Database};
 use crate::error::{Result, WifiError};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,24 +23,12 @@ pub struct NewProject {
 }
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<Project> {
-    let ts = |idx: usize| -> rusqlite::Result<DateTime<Utc>> {
-        let s: String = r.get(idx)?;
-        DateTime::parse_from_rfc3339(&s)
-            .map(|d| d.with_timezone(&Utc))
-            .map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    idx,
-                    rusqlite::types::Type::Text,
-                    Box::new(e),
-                )
-            })
-    };
     Ok(Project {
         id: r.get(0)?,
         name: r.get(1)?,
         customer_name: r.get(2)?,
-        created_at: ts(3)?,
-        updated_at: ts(4)?,
+        created_at: parse_ts(r, 3)?,
+        updated_at: parse_ts(r, 4)?,
     })
 }
 
@@ -108,7 +96,7 @@ mod tests {
     #[test]
     fn crud() {
         let db = Database::open_in_memory().unwrap();
-        assert_eq!(db.schema_version().unwrap(), 1);
+        assert!(db.schema_version().unwrap() >= 1);
         let p = db
             .create_project(&NewProject {
                 name: "  HQ survey ".into(),

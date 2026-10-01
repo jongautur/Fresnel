@@ -62,6 +62,10 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
               onChange={(e) => setAutoScanSeconds(Number(e.target.value))}
             />{" "}
             seconds
+            <div className="field-hint">
+              Scans on the same adapter are always at least 5.5 s apart: scans started sooner after the previous one
+              often hear only the connected network.
+            </div>
           </KV>
         </KeyValueGrid>
       </section>

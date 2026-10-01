@@ -186,6 +186,7 @@ export type ErrorKind =
   | "unsupported"
   | "database"
   | "invalid_input"
+  | "adapter_mismatch"
   | "backend"
   | "ipc"; // frontend-only: invoke itself failed
 

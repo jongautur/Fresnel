@@ -27,10 +27,15 @@ wifi-tool/
 │       │   │   ├── models.rs     # Normalised Adapter / AccessPoint / Connection models
 │       │   │   ├── channel.rs    # frequency ↔ channel ↔ band
 │       │   │   └── scanner.rs    # Scanner service (scan orchestration, provider-agnostic)
+│       │   ├── survey/
+│       │   │   ├── models.rs     # Building / Floor / FloorPlan / FloorScale / SurveyPoint / Sample
+│       │   │   ├── floorplan.rs  # PlanStore: validated plan image files in the app data dir
+│       │   │   └── measure.rs    # Measure Here: fresh-scan orchestration + freshness filter
 │       │   └── database/
 │       │       ├── mod.rs        # Database handle (rusqlite)
 │       │       ├── migrations.rs # Versioned migrations (PRAGMA user_version)
-│       │       └── projects.rs   # Project repository
+│       │       ├── projects.rs   # Project repository
+│       │       └── survey.rs     # Buildings, floors, points, samples
 │       └── examples/
 │           └── probe.rs          # CLI: list adapters + scan against real hardware
 ├── src-tauri/                    # Thin Tauri shell
@@ -42,12 +47,14 @@ wifi-tool/
 │   │       ├── mod.rs
 │   │       ├── adapters.rs
 │   │       ├── wifi.rs
-│   │       └── projects.rs
+│   │       ├── projects.rs
+│   │       └── survey.rs
 │   └── tauri.conf.json           # bundle targets: appimage, deb
 ├── src/                          # React + TypeScript (Vite)
 │   ├── api/tauri.ts              # the only file that calls invoke()
 │   ├── types/wifi.ts             # mirrors Rust models
-│   ├── components/               # AdapterSelector, WifiTable, ConnectionInfo, ...
+│   ├── components/               # AdapterSelector, WifiTable, ChannelMap, ...
+│   │   └── survey/               # SurveyNav, FloorWorkspace, PlanCanvas, PointDetails
 │   ├── pages/                    # Live, Networks, Survey, Settings
 │   └── lib/format.ts             # signal/band/security formatting
 └── docs/ARCHITECTURE.md
@@ -119,7 +126,8 @@ Scan sequence:
 
 Errors map to `WifiError` kinds (`ServiceUnavailable`, `NoAdapters`,
 `AdapterNotFound`, `AdapterUnavailable`, `RadioDisabled`, `PermissionDenied`,
-`ScanBusy`, `Timeout`, `Unsupported`, `Backend`). They are serialised as
+`ScanRejected`, `Timeout`, `Unsupported`, `Database`, `InvalidInput`,
+`AdapterMismatch`, `Backend`). They are serialised as
 `{ kind, message }` and the UI shows a helpful message instead of crashing.
 
 ### nl80211 enrichment (dBm, bands, freshness)
@@ -153,12 +161,64 @@ cfg80211 expires a BSS ~30 s after it was last heard, while NM remembers it
 longer. A BSS that NM lists but the kernel no longer has gets no `dbm`. The UI
 shows % for it and explains why.
 
+### Scan reliability
+
+Two NetworkManager + iwlwifi behaviours make "the scan completed" an
+unreliable signal, both measured on real hardware:
+
+* A `LastScan` change < 1.2 s after `RequestScan` is a scan that was already
+  running (e.g. a supplicant background scan) ending, with partial results
+  (185 ms "scans" were seen). The provider requests again once.
+* Scans started < 5 s after the previous one often came back having heard
+  only the associated AP (the kernel BSS table is flushed at scan start).
+  `Scanner` spaces hardware scans on one adapter ≥ 5.5 s apart.
+
 ### Per-card calibration (not yet implemented)
 
 dBm readings differ between cards by several dB (antennas, chain combining,
-drivers). Samples will store raw dBm plus the adapter and model that took them;
-an optional per-model offset is applied at display/heatmap time, never to the
-stored data.
+drivers). Samples store raw dBm plus the adapter and model that took them
+(`survey_points.adapter_model`, `adapter_hw_id`); an optional per-model
+offset will be applied at display/heatmap time, never to the stored data.
+
+## 3a. Site survey
+
+```text
+projects ─< buildings ─< floors ─< survey_points ─< survey_samples
+                         (plan file, scale line)   (x, y, adapter)   (one row per BSSID heard)
+```
+
+* **Floor plans**: PNG/JPEG/SVG, format sniffed from content. The file is copied
+  to `<app data>/floorplans/plan-*.{png,jpg,svg}`; the DB stores only the file
+  name. Unreferenced plan files are garbage-collected at startup and after
+  deletes. The image travels over IPC as a raw body (headers carry floor id and
+  size) and back as a raw response, with no base64.
+* **Coordinates** are plan pixels in the image's natural size *as the webview
+  renders it* (accounts for EXIF rotation; small SVGs are scaled up so they stay
+  sharp). Metres = pixels / (scale line length px / length m). Replacing a plan is
+  refused while the floor has points.
+* **Measure Here** (`survey::measure`): pre-flight (floor, plan, position,
+  adapter consistency), then a scan the hardware actually performed (retries if
+  NM declined or the scan looks incomplete), then keep only BSSes whose
+  `last_seen_age_ms` ≤ scan duration + 250 ms. A point with zero samples is a
+  valid dead zone. If a provider reports no ages at all, measuring is refused
+  rather than guessing.
+* **Heatmaps** (`src/lib/heatmap.ts`, computed in the webview from the stored
+  points): per point, the strongest dBm of the chosen SSID/BSSID/band (or
+  −100 dBm "not heard"), or for overlap the number of distinct APs ≥ a level
+  (BSSIDs differing only in the first/last octet count as one AP). IDW (power 2,
+  neighbours within 6 m) on a ~10 cm grid, masked beyond 3 m from the nearest
+  point. Only dBm is interpolated; never %. Colours: one-hue blue ramp for
+  signal, fixed good/critical status colours for coverage pass/fail.
+* **Placed APs** (migration v3: `placed_aps`, `placed_ap_bssids`): a position on
+  one floor plus the BSSIDs it broadcasts. Names resolve building-wide, and a
+  BSSID belongs to at most one AP per building (checked in Rust). Replacing a
+  plan is refused while APs are placed on it. Heatmap views: "per AP" (all its
+  BSSIDs as one network) and "serving AP" (IDW per AP, strongest wins; below
+  the level counts as unserved). An AP's colour is its categorical slot by
+  building order, never its rank.
+* **One adapter per floor**: measuring with a different adapter (ID or hardware
+  ID) than earlier points returns `adapter_mismatch`; the UI asks and retries
+  with `allowAdapterChange`.
 
 ## 4. Normalised models (summary — see `wifi/models.rs`)
 
@@ -204,6 +264,6 @@ Access points are **never merged by SSID** in Rust. SSID grouping is a UI toggle
 7. Packaging config (AppImage, .deb); README with system prerequisites
 8. Clean-up pass
 
-Next phases: survey DB (buildings/floors/
-floor plans/points/samples), Measure Here, channel analyser, active tests,
-heatmaps (IDW).
+Done since: survey DB (buildings/floors/floor plans/points/samples), Measure
+Here, channel analyser, heatmaps (IDW). Next: active tests, per-model
+calibration offsets, report export.

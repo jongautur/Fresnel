@@ -12,7 +12,7 @@ mod convert;
 mod proxies;
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -36,6 +36,11 @@ use crate::wifi::models::*;
 pub const PROVIDER_ID: &str = "networkmanager";
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(15);
+/// A `LastScan` change sooner than this after `RequestScan` is a scan that
+/// was already running (e.g. a supplicant background scan) finishing, not
+/// ours; its results can be partial. Observed: 185 ms "scans" that heard
+/// only the associated AP.
+const MIN_OWN_SCAN: Duration = Duration::from_millis(1200);
 
 /// A Wi-Fi device as seen by NM at one point in time.
 struct NmWifiDevice {
@@ -356,13 +361,17 @@ impl NetworkManagerProvider {
         // Subscribe before requesting so a fast scan can't be missed.
         let mut changes = wireless.receive_last_scan_changed().await;
 
-        let mut options: HashMap<&str, Value<'_>> = HashMap::new();
-        if !ssids.is_empty() {
-            let raw: Vec<Vec<u8>> = ssids.iter().map(|s| s.as_bytes().to_vec()).collect();
-            options.insert("ssids", Value::from(raw));
-        }
+        let options = || {
+            let mut options: HashMap<&str, Value<'_>> = HashMap::new();
+            if !ssids.is_empty() {
+                let raw: Vec<Vec<u8>> = ssids.iter().map(|s| s.as_bytes().to_vec()).collect();
+                options.insert("ssids", Value::from(raw));
+            }
+            options
+        };
 
-        if let Err(e) = wireless.request_scan(options).await {
+        let requested = Instant::now();
+        if let Err(e) = wireless.request_scan(options()).await {
             return match map_zbus_error(e, "RequestScan") {
                 WifiError::ScanRejected(msg) => {
                     warn!(interface = %dev.interface, %msg, "scan rejected; using cached results");
@@ -378,14 +387,25 @@ impl NetworkManagerProvider {
         }
 
         let wait = async {
+            let mut last = before;
+            let mut asked_again = false;
             while let Some(change) = changes.next().await {
-                if let Ok(ts) = change.get().await {
-                    if ts != before && ts > 0 {
-                        return ts;
+                let Ok(ts) = change.get().await else { continue };
+                if ts == last || ts <= 0 {
+                    continue;
+                }
+                if !asked_again && requested.elapsed() < MIN_OWN_SCAN {
+                    // Someone else's scan just ended; the radio is free now.
+                    asked_again = true;
+                    last = ts;
+                    debug!(interface = %dev.interface, "a running scan finished first; requesting ours again");
+                    if wireless.request_scan(options()).await.is_ok() {
+                        continue;
                     }
                 }
+                return ts;
             }
-            before
+            last
         };
         match tokio::time::timeout(SCAN_TIMEOUT, wait).await {
             Ok(_) => Ok((true, None)),

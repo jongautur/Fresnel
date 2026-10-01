@@ -50,7 +50,10 @@ const BANDS: BandSpec[] = [
 type Role = "connected" | "highlighted" | "other";
 
 interface Shape {
+  /** Representative BSSID (the strongest when several share one radio). */
   ap: AccessPointObservation;
+  /** Every BSSID drawn by this shape; more than one when same-radio merging is on. */
+  members: AccessPointObservation[];
   value: number;
   lo: number;
   hi: number;
@@ -77,6 +80,53 @@ const REFERENCE_DBM = -67;
 /** Same threshold as the table's dimmed rows. */
 const STALE_MS = 30_000;
 
+const MERGE_KEY = "fresnel.channelMap.mergeRadios";
+
+function loadMerge(): boolean {
+  try {
+    return localStorage.getItem(MERGE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Heuristic key for "same physical radio": one radio advertising several SSIDs
+ * derives the BSSIDs from one base MAC, usually varying only the first octet
+ * (locally-administered variants) or the last. Same channel, width and centre
+ * plus identical octets 2–5 is treated as one radio.
+ */
+function radioKey(ap: AccessPointObservation): string {
+  const o = ap.bssid.toLowerCase().split(":");
+  return `${ap.frequencyMhz}|${ap.channelWidthMhz ?? 20}|${ap.channelCenterMhz ?? ""}|${o.slice(1, 5).join(":")}`;
+}
+
+function mergeRadios(shapes: Shape[]): Shape[] {
+  const groups = new Map<string, Shape[]>();
+  for (const s of shapes) {
+    const k = radioKey(s.ap);
+    const g = groups.get(k);
+    if (g) g.push(s);
+    else groups.set(k, [s]);
+  }
+  return [...groups.values()].map((g) => {
+    if (g.length === 1) return g[0]!;
+    g.sort((a, b) => rank(b.role) - rank(a.role) || b.value - a.value);
+    const lead = g[0]!;
+    return {
+      ...lead,
+      value: Math.max(...g.map((s) => s.value)),
+      members: g.map((s) => s.ap),
+      stale: g.every((s) => s.stale),
+    };
+  });
+}
+
+function shapeName(s: Shape): string {
+  const names = [...new Set(s.members.map((m) => m.ssid ?? "hidden"))];
+  return names.join(" + ");
+}
+
 const PAD = { left: 40, right: 12, top: 22, bottom: 26 };
 const PLOT_HEIGHT = 190;
 
@@ -102,14 +152,17 @@ function BandChart({
   shapes,
   omitted,
   unit,
+  merged,
   onPick,
 }: {
   spec: BandSpec;
   shapes: Shape[];
   omitted: number;
   unit: SignalUnit;
+  merged: boolean;
   onPick: (ssid: string | null) => void;
 }) {
+  const noun = merged ? "radio" : "BSSID";
   const [ref, width] = useWidth<HTMLDivElement>();
   const [cursor, setCursor] = useState<number | null>(null); // index into spec.channels
   const [pointerY, setPointerY] = useState<number | null>(null);
@@ -181,7 +234,10 @@ function BandChart({
     <section className="card channel-card">
       <header className="card-header">
         <h2>
-          {spec.label} <span className="count">{shapes.length}</span>
+          {spec.label}{" "}
+          <span className="count" title={merged ? "Radios (BSSIDs on one radio merged)" : "BSSIDs"}>
+            {shapes.length}
+          </span>
         </h2>
         {omitted > 0 && (
           <span className="muted small" title="These BSSIDs have no reading in the selected unit">
@@ -195,7 +251,7 @@ function BandChart({
             width={width}
             height={height}
             role="img"
-            aria-label={`${spec.label} channel occupancy: ${shapes.length} BSSIDs`}
+            aria-label={`${spec.label} channel occupancy: ${shapes.length} ${noun}s`}
             tabIndex={0}
             onPointerMove={onMove}
             onPointerLeave={() => setCursor(null)}
@@ -270,7 +326,7 @@ function BandChart({
               const cx = Math.min(Math.max(x((s.lo + s.hi) / 2), PAD.left + 40), width - PAD.right - 40);
               return (
                 <text key={`l-${s.ap.bssid}`} className="viz-label" x={cx} y={y(s.value) - 8} textAnchor="middle">
-                  {s.ap.ssid ?? "hidden"}
+                  {shapeName(s)}
                 </text>
               );
             })}
@@ -293,7 +349,8 @@ function BandChart({
             }}
           >
             <div className="viz-tooltip-head">
-              Ch {spec.channels[cursor!]![0]} · {cursorMhz} MHz · {covering.length} BSSID{covering.length > 1 ? "s" : ""}
+              Ch {spec.channels[cursor!]![0]} · {cursorMhz} MHz · {covering.length} {noun}
+              {covering.length > 1 ? "s" : ""}
             </div>
             {covering.slice(0, 8).map((s) => (
               <div key={s.ap.bssid} className="viz-tooltip-row">
@@ -302,9 +359,10 @@ function BandChart({
                   {Math.round(s.value)}
                   <span className="unit">{unit === "dbm" ? " dBm" : "%"}</span>
                 </strong>
-                <span className="viz-tooltip-ssid">{s.ap.ssid ?? "hidden"}</span>
+                <span className="viz-tooltip-ssid">{shapeName(s)}</span>
                 <span className="muted mono">
                   ch {s.ap.channel ?? "?"} · {s.ap.channelWidthMhz ?? 20} MHz{s.centreKnown ? "" : " (approx.)"}
+                  {s.members.length > 1 && ` · ${s.members.length} BSSIDs`}
                   {s.stale && ` · seen ${formatAge(s.ap.lastSeenAgeMs)} ago`}
                 </span>
               </div>
@@ -326,7 +384,7 @@ function labelsFor(shapes: Shape[]): Shape[] {
   const best = new Map<string, Shape>();
   for (const s of shapes) {
     if (s.role === "other") continue;
-    const k = s.ap.ssid ?? "";
+    const k = shapeName(s);
     const cur = best.get(k);
     if (!cur || s.value > cur.value) best.set(k, s);
   }
@@ -349,6 +407,15 @@ export function ChannelMap({
   onHighlight: (ssid: string | null) => void;
 }) {
   const { signalUnit } = usePreferences();
+  const [merge, setMergeState] = useState(loadMerge);
+  const setMerge = (on: boolean) => {
+    setMergeState(on);
+    try {
+      localStorage.setItem(MERGE_KEY, on ? "1" : "0");
+    } catch {
+      /* non-essential */
+    }
+  };
 
   const perBand = useMemo(() => {
     const out = new Map<Band, { shapes: Shape[]; omitted: number }>();
@@ -371,6 +438,7 @@ export function ChannelMap({
             : "other";
       slot.shapes.push({
         ap,
+        members: [ap],
         value,
         lo: centre - width / 2,
         hi: centre + width / 2,
@@ -379,8 +447,9 @@ export function ChannelMap({
         role,
       });
     }
+    if (merge) for (const slot of out.values()) slot.shapes = mergeRadios(slot.shapes);
     return out;
-  }, [accessPoints, signalUnit, connectedSsid, highlightSsid]);
+  }, [accessPoints, signalUnit, connectedSsid, highlightSsid, merge]);
 
   const visibleBands = BANDS.filter((b) => {
     const d = perBand.get(b.band)!;
@@ -412,6 +481,13 @@ export function ChannelMap({
         <span className="legend-item">
           <span className="viz-key viz-other" /> Other networks
         </span>
+        <label
+          className="checkbox small"
+          title="Draw BSSIDs that share one radio (same channel, BSSIDs differing only in the first or last octet) as a single shape"
+        >
+          <input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} />
+          Merge SSIDs on one radio
+        </label>
         <span className="muted small legend-hint">
           Height = signal, width = occupied channel. Click a network here or in the table to highlight it.
         </span>
@@ -426,6 +502,7 @@ export function ChannelMap({
               shapes={d.shapes}
               omitted={d.omitted}
               unit={signalUnit}
+              merged={merge}
               onPick={pick}
             />
           );

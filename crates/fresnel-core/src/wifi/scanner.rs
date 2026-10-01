@@ -5,13 +5,20 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{debug, info};
 
 use super::models::{AdapterId, ConnectionInfo, ScanRequest, ScanResult};
 use crate::adapters::AdapterRegistry;
 use crate::error::Result;
+
+/// Minimum time between the end of one hardware scan and the start of the
+/// next on the same adapter. Measured on NetworkManager + iwlwifi: scans
+/// started < 5 s after the previous one often come back having heard only
+/// the associated AP (4 of 6 at 4 s, 0 of 16 at ≥ 5 s).
+const MIN_SCAN_GAP: Duration = Duration::from_millis(5500);
 
 pub struct Scanner {
     registry: Arc<AdapterRegistry>,
@@ -20,6 +27,8 @@ pub struct Scanner {
     /// while different adapters scan in parallel.
     locks: Mutex<HashMap<AdapterId, Arc<Mutex<()>>>>,
     last: Mutex<HashMap<AdapterId, ScanResult>>,
+    /// When each adapter's last hardware scan finished.
+    last_triggered: Mutex<HashMap<AdapterId, Instant>>,
 }
 
 impl Scanner {
@@ -28,6 +37,7 @@ impl Scanner {
             registry,
             locks: Mutex::new(HashMap::new()),
             last: Mutex::new(HashMap::new()),
+            last_triggered: Mutex::new(HashMap::new()),
         }
     }
 
@@ -49,8 +59,22 @@ impl Scanner {
         let lock = self.adapter_lock(adapter).await;
         let _guard = lock.lock().await;
 
+        if request.trigger {
+            let previous = self.last_triggered.lock().await.get(adapter).copied();
+            if let Some(wait) = previous.and_then(|t| MIN_SCAN_GAP.checked_sub(t.elapsed())) {
+                debug!(adapter = %adapter, ?wait, "spacing out back-to-back scans");
+                tokio::time::sleep(wait).await;
+            }
+        }
+
         let provider = self.registry.provider_for(adapter).await?;
         let mut result = provider.scan(adapter, request).await?;
+        if result.scan_triggered {
+            self.last_triggered
+                .lock()
+                .await
+                .insert(adapter.clone(), Instant::now());
+        }
         result.access_points.sort_by(|a, b| {
             b.signal
                 .sort_key()

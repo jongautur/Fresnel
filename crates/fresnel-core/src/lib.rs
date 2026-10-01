@@ -4,6 +4,7 @@
 pub mod adapters;
 pub mod database;
 pub mod error;
+pub mod survey;
 pub mod wifi;
 
 pub use error::{Result, WifiError};

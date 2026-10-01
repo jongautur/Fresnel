@@ -44,6 +44,11 @@ pub enum WifiError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    /// A survey measurement would mix readings from different adapters on
+    /// one floor. The caller may retry with explicit confirmation.
+    #[error("{0}")]
+    AdapterMismatch(String),
+
     #[error("{0}")]
     Backend(String),
 }
@@ -63,6 +68,7 @@ impl WifiError {
             Self::Unsupported(_) => "unsupported",
             Self::Database(_) => "database",
             Self::InvalidInput(_) => "invalid_input",
+            Self::AdapterMismatch(_) => "adapter_mismatch",
             Self::Backend(_) => "backend",
         }
     }

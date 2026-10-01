@@ -3,9 +3,12 @@
 Native Linux desktop tool for Wi-Fi analysis and site surveys.
 Tauri 2 · Rust · React/TypeScript · SQLite · NetworkManager (D-Bus). Fully offline.
 
-**Status: v0.2**: adapter discovery, BSSID scanning with real dBm (nl80211),
-current connection with TX/RX link rates, channel overlap map, dBm / % display setting,
-SQLite project storage. Floor plans, survey measurements, heatmaps and active tests come later.
+**Status: v0.3**: adapter discovery, BSSID scanning with real dBm (nl80211),
+current connection with TX/RX link rates, channel overlap map, dBm / % display setting.
+Survey: projects → buildings → floors, floor plan import (PNG/JPEG/SVG) with a two-point
+scale, **Measure Here** points stored in SQLite, access points marked on the plan with their
+BSSIDs, and heatmaps (signal per network or AP, coverage vs. a target, AP overlap, serving AP).
+Active tests come later.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Prerequisites (Ubuntu/Debian)
@@ -59,7 +62,8 @@ Flatpak isn't targeted on purpose: future monitor-mode and USB-probe access conf
 |---|---|
 | `crates/fresnel-core/src/adapters/` | Hardware providers behind the `WifiAdapterProvider` trait (NetworkManager now) |
 | `crates/fresnel-core/src/wifi/` | Normalised models, channel math, provider-agnostic `Scanner` |
-| `crates/fresnel-core/src/database/` | SQLite + versioned migrations |
+| `crates/fresnel-core/src/database/` | SQLite + versioned migrations, project/survey repositories |
+| `crates/fresnel-core/src/survey/` | Survey models, floor plan file store, Measure Here |
 | `src-tauri/` | Thin Tauri shell: app state and IPC commands |
 | `src/` | React UI (`api/tauri.ts` is the only file that calls the backend) |
 
@@ -74,6 +78,31 @@ TX/RX link rates. Noise is shown only on drivers that report it (not iwlwifi).
   labelled as %.
 - NM remembers BSSes for minutes; the kernel only ~30 s. Entries the kernel no longer
   has show % instead of dBm, and the **Seen** column dims rows older than 30 s.
+
+## Survey measurements
+
+**Measure Here** triggers a fresh scan and stores only the BSSIDs heard *during* that
+scan (raw dBm, %, channel, width, centre, SSID, security, PHY), plus which adapter and
+model took them. The backend's cache is never saved as a measurement:
+
+- If NetworkManager declines the scan, Fresnel retries; after a few attempts it saves nothing
+  and says so.
+- Scans that heard only the connected network (while others were in range moments ago), or
+  that lost dBm for some BSSIDs, count as incomplete and are retried.
+- Scans on one adapter are spaced at least 5.5 s apart. On NetworkManager + iwlwifi, scans
+  started sooner often heard only the associated AP.
+
+**Heatmaps** (toolbar → Heatmap) interpolate the points' dBm with inverse-distance
+weighting. A network not heard at a point counts as "not heard" there (−100 dBm), so a
+strong neighbour can't paint signal where it was measurably absent. Shading stops 3 m from
+the nearest point. Walls aren't modelled, so measure on both sides of walls that matter.
+
+**Access points** (toolbar → Access points): click where an AP is mounted and link the BSSIDs it
+broadcasts. Fresnel pre-selects the strongest group of BSSIDs sharing a base MAC near that spot.
+Names then appear in point readings and the heatmap. A BSSID belongs to one AP per building.
+
+Floor plans are copied into the app data folder (`~/.local/share/io.fresnel.app/floorplans/`),
+next to `fresnel.db`. Point coordinates are plan pixels; metres come from the floor's scale line.
 
 ## License
 

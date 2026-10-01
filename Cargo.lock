@@ -928,7 +928,7 @@ dependencies = [
 
 [[package]]
 name = "fresnel"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fresnel-core",
  "serde",
@@ -942,7 +942,7 @@ dependencies = [
 
 [[package]]
 name = "fresnel-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "chrono",

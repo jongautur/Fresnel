@@ -4,13 +4,16 @@
 //! rusqlite is synchronous, so callers on async code paths should go through
 //! `tokio::task::spawn_blocking` (the Tauri command layer does).
 
+pub mod aps;
 mod migrations;
 pub mod projects;
+pub mod survey;
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
-use rusqlite::Connection;
+use chrono::{DateTime, Utc};
+use rusqlite::{Connection, Row};
 use tracing::info;
 
 use crate::error::{Result, WifiError};
@@ -58,4 +61,14 @@ impl Database {
             .conn()
             .pragma_query_value(None, "user_version", |r| r.get(0))?)
     }
+}
+
+/// Read an RFC 3339 TEXT column as a UTC timestamp.
+pub(crate) fn parse_ts(r: &Row<'_>, idx: usize) -> rusqlite::Result<DateTime<Utc>> {
+    let s: String = r.get(idx)?;
+    DateTime::parse_from_rfc3339(&s)
+        .map(|d| d.with_timezone(&Utc))
+        .map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, Box::new(e))
+        })
 }
