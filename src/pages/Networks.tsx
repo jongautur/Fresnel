@@ -3,6 +3,7 @@ import { useWifi } from "../state/WifiContext";
 import type { AccessPointObservation } from "../types/wifi";
 import { BAND_LABEL, SECURITY_LABEL, signalSortValue } from "../lib/format";
 import { SignalCell } from "../components/SignalCell";
+import { usePreferences } from "../state/Preferences";
 
 interface SsidSummary {
   ssid: string | null;
@@ -13,6 +14,7 @@ interface SsidSummary {
 /** SSID-level view of the latest scan. Presentation only — the data stays per BSSID. */
 export function Networks() {
   const { scan, selectedAdapter } = useWifi();
+  const { signalUnit } = usePreferences();
 
   const summaries = useMemo<SsidSummary[]>(() => {
     const map = new Map<string, AccessPointObservation[]>();
@@ -24,10 +26,12 @@ export function Networks() {
       .map((bssids) => ({
         ssid: bssids[0]!.ssid,
         bssids,
-        best: bssids.reduce((m, r) => (signalSortValue(r.signal) > signalSortValue(m.signal) ? r : m)),
+        best: bssids.reduce((m, r) =>
+          signalSortValue(r.signal, signalUnit) > signalSortValue(m.signal, signalUnit) ? r : m,
+        ),
       }))
-      .sort((a, b) => signalSortValue(b.best.signal) - signalSortValue(a.best.signal));
-  }, [scan]);
+      .sort((a, b) => signalSortValue(b.best.signal, signalUnit) - signalSortValue(a.best.signal, signalUnit));
+  }, [scan, signalUnit]);
 
   return (
     <div className="page">

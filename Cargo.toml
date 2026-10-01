@@ -6,7 +6,7 @@ members = ["crates/fresnel-core", "src-tauri"]
 default-members = ["crates/fresnel-core"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 rust-version = "1.80"
@@ -25,6 +25,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+wl-nl80211 = "0.8"
 
 [profile.release]
 lto = true

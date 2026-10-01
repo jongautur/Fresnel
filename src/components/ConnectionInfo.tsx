@@ -1,5 +1,5 @@
 import type { ApiError, ConnectionInfo as Conn } from "../types/wifi";
-import { BAND_LABEL, SECURITY_LABEL, formatBitrate, formatMhz } from "../lib/format";
+import { BAND_LABEL, SECURITY_LABEL, formatBitrate, formatLinkRate, formatMhz } from "../lib/format";
 import { KeyValueGrid, KV } from "./KeyValue";
 import { SignalCell } from "./SignalCell";
 import { ErrorBanner } from "./ErrorBanner";
@@ -26,7 +26,21 @@ export function ConnectionInfo({ connection, error }: { connection: Conn | null;
           </KV>
           <KV k="Frequency" mono>{formatMhz(connection.frequencyMhz)}</KV>
           <KV k="Band">{connection.band ? BAND_LABEL[connection.band] : null}</KV>
-          <KV k="Link rate" mono>{formatBitrate(connection.bitrateKbps)}</KV>
+          <KV k="Signal" mono>
+            {connection.signal.dbm != null && `${connection.signal.dbm.toFixed(0)} dBm`}
+            {connection.signal.dbm != null && connection.signal.qualityPercent != null && " · "}
+            {connection.signal.qualityPercent != null && (
+              <span className="muted">{connection.signal.qualityPercent} % (NM)</span>
+            )}
+          </KV>
+          {connection.txRate || connection.rxRate ? (
+            <>
+              <KV k="TX rate" mono>{formatLinkRate(connection.txRate)}</KV>
+              <KV k="RX rate" mono>{formatLinkRate(connection.rxRate)}</KV>
+            </>
+          ) : (
+            <KV k="Link rate" mono>{formatBitrate(connection.bitrateKbps)}</KV>
+          )}
           <KV k="Security">{connection.security ? SECURITY_LABEL[connection.security.kind] : null}</KV>
           <KV k="IPv4" mono>{connection.ipv4Addresses.join(", ")}</KV>
           <KV k="Gateway" mono>{connection.ipv4Gateway}</KV>

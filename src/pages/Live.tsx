@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { useWifi } from "../state/WifiContext";
 import { AdapterSelector } from "../components/AdapterSelector";
 import { AdapterInfo } from "../components/AdapterInfo";
 import { ConnectionInfo } from "../components/ConnectionInfo";
 import { WifiTable } from "../components/WifiTable";
+import { ChannelMap } from "../components/ChannelMap";
 import { ErrorBanner, NoticeBanner } from "../components/ErrorBanner";
 import { IconRadar } from "../components/Icons";
 import { formatTime } from "../lib/format";
 
 export function Live() {
+  const [highlightSsid, setHighlightSsid] = useState<string | null>(null);
   const {
     listing,
     adaptersError,
@@ -74,7 +77,18 @@ export function Live() {
         <ConnectionInfo connection={connection} error={connectionError} />
       </div>
 
-      <WifiTable accessPoints={scan?.accessPoints ?? []} />
+      <ChannelMap
+        accessPoints={scan?.accessPoints ?? []}
+        connectedSsid={connection?.ssid ?? null}
+        highlightSsid={highlightSsid}
+        onHighlight={setHighlightSsid}
+      />
+
+      <WifiTable
+        accessPoints={scan?.accessPoints ?? []}
+        highlightSsid={highlightSsid}
+        onHighlight={(ssid) => setHighlightSsid(ssid === connection?.ssid ? null : ssid)}
+      />
     </div>
   );
 }

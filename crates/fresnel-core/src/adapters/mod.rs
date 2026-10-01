@@ -2,6 +2,7 @@
 //! kind of Wi-Fi hardware or OS service lives under this module.
 
 pub mod networkmanager;
+pub mod nl80211;
 pub mod registry;
 pub mod sysfs;
 pub mod traits;

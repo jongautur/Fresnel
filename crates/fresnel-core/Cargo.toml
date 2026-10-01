@@ -18,6 +18,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 zbus.workspace = true
+wl-nl80211.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true }

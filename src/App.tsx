@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType, type SVGProps } from "react";
 import { WifiProvider, useWifi } from "./state/WifiContext";
+import { PreferencesProvider } from "./state/Preferences";
 import { Live } from "./pages/Live";
 import { Networks } from "./pages/Networks";
 import { Survey } from "./pages/Survey";
@@ -58,6 +59,7 @@ export default function App() {
   };
 
   return (
+    <PreferencesProvider>
     <WifiProvider>
       <div className="app">
         <nav className="sidebar">
@@ -82,5 +84,6 @@ export default function App() {
         </main>
       </div>
     </WifiProvider>
+    </PreferencesProvider>
   );
 }

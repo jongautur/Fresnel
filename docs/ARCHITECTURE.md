@@ -65,7 +65,7 @@ React UI ──invoke──▶ Tauri commands ──▶ Scanner / Registry / Dat
                                               │
                                               ▼
                                    dyn WifiAdapterProvider
-                                   ├── NetworkManagerProvider   (v0.1)
+                                   ├── NetworkManagerProvider   (+ nl80211 helper)
                                    ├── Nl80211Provider          (future)
                                    ├── PcapMonitorProvider      (future)
                                    └── UsbProbeProvider         (future, ESP32)
@@ -122,24 +122,43 @@ Errors map to `WifiError` kinds (`ServiceUnavailable`, `NoAdapters`,
 `ScanBusy`, `Timeout`, `Unsupported`, `Backend`). They are serialised as
 `{ kind, message }` and the UI shows a helpful message instead of crashing.
 
-### Signal strength honesty
+### nl80211 enrichment (dBm, bands, freshness)
 
-NetworkManager's D-Bus API exposes **only a 0–100 % quality value**, not dBm.
-The model therefore carries both, independently optional:
+NetworkManager's D-Bus API exposes **only a 0–100 % quality value**, has no 6 GHz
+flag, and no PHY/noise/load data. `adapters/nl80211/` reads the kernel's cfg80211
+state over generic netlink (`wl-nl80211` crate). Every request used is an
+unprivileged *dump*:
+
+| nl80211 request | Gives |
+|---|---|
+| `GET_WIPHY` (split dump) | supported bands (incl. 6 GHz), monitor/AP mode support |
+| `GET_SCAN` | per-BSS signal in mBm, ms since last heard, beacon interval, raw IEs |
+| `GET_STATION` | link signal / averaged signal, TX/RX rate (PHY, MCS, NSS, width, GI) |
+| `GET_SURVEY` | noise floor per channel (driver-dependent; iwlwifi has none) |
+
+It's a helper like `sysfs.rs`, not a provider. The NM provider keeps triggering
+scans (polkit-authorised) and owns the BSS list, and adds kernel measurements
+matched by BSSID + frequency. Without nl80211 it degrades to NM-only data. A
+future root-capable nl80211 provider (own scan trigger, monitor mode) can reuse
+the module.
+
+The model keeps both signal values, independently optional, and never converts
+% → dBm:
 
 ```rust
 pub struct Signal { pub dbm: Option<f32>, pub quality_percent: Option<u8> }
 ```
 
-The NM provider fills `quality_percent` only. A future nl80211 provider (scan
-dumps are unprivileged) fills `dbm`. The UI labels the unit explicitly and never
-converts % → dBm.
+cfg80211 expires a BSS ~30 s after it was last heard, while NM remembers it
+longer. A BSS that NM lists but the kernel no longer has gets no `dbm`. The UI
+shows % for it and explains why.
 
-### 6 GHz detection
+### Per-card calibration (not yet implemented)
 
-NM has flags for 2.4 and 5 GHz but **no 6 GHz flag**. Capabilities are therefore
-tri-state (`supported` / `unsupported` / `unknown`); 6 GHz is `unknown` until
-the nl80211 provider (wiphy band dump) is added.
+dBm readings differ between cards by several dB (antennas, chain combining,
+drivers). Samples will store raw dBm plus the adapter and model that took them;
+an optional per-model offset is applied at display/heatmap time, never to the
+stored data.
 
 ## 4. Normalised models (summary — see `wifi/models.rs`)
 
@@ -154,7 +173,7 @@ Adapter {
 AdapterCapabilities {
   band_2ghz, band_5ghz, band_6ghz,   // Capability = Supported | Unsupported | Unknown
   active_scan, passive_scan, monitor_mode, packet_capture, ap_mode,
-  reports_dbm, reports_quality,
+  signal_dbm, signal_quality,
 }
 AccessPointObservation {             // one BSSID seen in one scan
   timestamp, adapter_id,
@@ -185,6 +204,6 @@ Access points are **never merged by SSID** in Rust. SSID grouping is a UI toggle
 7. Packaging config (AppImage, .deb); README with system prerequisites
 8. Clean-up pass
 
-Next phases: nl80211 provider (dBm, 6 GHz, noise), survey DB (buildings/floors/
+Next phases: survey DB (buildings/floors/
 floor plans/points/samples), Measure Here, channel analyser, active tests,
 heatmaps (IDW).

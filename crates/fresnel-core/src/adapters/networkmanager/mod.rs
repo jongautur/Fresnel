@@ -1,13 +1,12 @@
 //! [`WifiAdapterProvider`] backed by NetworkManager over the system D-Bus.
 //!
-//! Limitations inherent to NM's D-Bus API (documented so nobody "fixes" them
-//! by faking data):
-//!
-//! * signal strength is a 0–100 quality value, never dBm;
-//! * no 6 GHz capability flag;
-//! * no noise, utilisation, beacon interval or PHY information.
-//!
-//! The future nl80211 provider fills these gaps.
+//! NetworkManager is used for what needs authorisation (triggering scans,
+//! via polkit) and for the BSS list, connection state and security flags.
+//! NM's D-Bus API has gaps: signal is a 0–100 quality value (never dBm),
+//! there is no 6 GHz flag, and no PHY/noise/utilisation data. When the
+//! kernel's nl80211 interface is reachable (it is, unprivileged, on any
+//! cfg80211 driver) those gaps are filled from it, matched by BSSID.
+//! Without nl80211 the provider still works, with NM data only.
 
 mod convert;
 mod proxies;
@@ -27,10 +26,11 @@ use zbus::Connection;
 
 use self::convert::*;
 use self::proxies::*;
+use super::nl80211::{self, BssMeasurement, Nl80211, WiphyInfo};
 use super::sysfs;
 use super::traits::WifiAdapterProvider;
 use crate::error::{Result, WifiError};
-use crate::wifi::channel::{band_for_frequency, channel_for_frequency};
+use crate::wifi::channel::{band_for_frequency, channel_center_mhz, channel_for_frequency};
 use crate::wifi::models::*;
 
 pub const PROVIDER_ID: &str = "networkmanager";
@@ -63,6 +63,7 @@ impl NmWifiDevice {
 pub struct NetworkManagerProvider {
     /// Lazily established; reset on transport failure so we reconnect.
     conn: Mutex<Option<Connection>>,
+    nl: Nl80211,
 }
 
 impl NetworkManagerProvider {
@@ -212,7 +213,12 @@ impl NetworkManagerProvider {
         (status, detail)
     }
 
-    async fn build_adapter(conn: &Connection, dev: &NmWifiDevice, radio: (bool, bool)) -> Adapter {
+    async fn build_adapter(
+        &self,
+        conn: &Connection,
+        dev: &NmWifiDevice,
+        radio: (bool, bool),
+    ) -> Adapter {
         let bus = sysfs::bus_info(&dev.interface);
         let driver = prop::<String>(&dev.device, "Driver").filter(|s| !s.is_empty());
         let display_name = display_name(bus.as_ref(), driver.as_deref(), &dev.interface);
@@ -233,20 +239,86 @@ impl NetworkManagerProvider {
             .map(|s| normalise_mac(&s))
             .filter(|p| !p.is_empty() && Some(p) != hw_address.as_ref());
 
+        let mut capabilities = capabilities(prop(&dev.wireless, "WirelessCapabilities"));
+        let mut data_sources = vec![PROVIDER_ID.to_string()];
+        if let Some(ifindex) = nl80211::ifindex(&dev.interface) {
+            match self.nl.wiphy(ifindex).await {
+                Ok(wiphy) => {
+                    apply_wiphy(&mut capabilities, &wiphy);
+                    data_sources.push("nl80211".into());
+                    // Whether the driver reports dBm is only visible in scan results.
+                    if let Ok(bss) = self.nl.scan_dump(ifindex).await {
+                        if bss.iter().any(|b| b.signal_dbm.is_some()) {
+                            capabilities.signal_dbm = Capability::Supported;
+                        } else if !bss.is_empty() {
+                            capabilities.signal_dbm = Capability::Unsupported;
+                        } else {
+                            capabilities.signal_dbm = Capability::Unknown;
+                        }
+                    }
+                }
+                Err(e) => debug!(interface = %dev.interface, error = %e, "nl80211 unavailable"),
+            }
+        }
+
         Adapter {
             id: dev.id(),
             provider: PROVIDER_ID.into(),
+            data_sources,
             interface_name: Some(dev.interface.clone()),
             display_name,
             driver,
             hw_address,
             permanent_hw_address,
             bus,
-            capabilities: capabilities(prop(&dev.wireless, "WirelessCapabilities")),
+            capabilities,
             status,
             status_detail,
             connected_ssid,
         }
+    }
+
+    /// Add kernel measurements (dBm, freshness, PHY, BSS Load, noise) to
+    /// NM's observations. Returns whether nl80211 data was available.
+    async fn enrich(&self, dev: &NmWifiDevice, aps: &mut [AccessPointObservation]) -> bool {
+        let Some(ifindex) = nl80211::ifindex(&dev.interface) else {
+            return false;
+        };
+        let bss = match self.nl.scan_dump(ifindex).await {
+            Ok(b) => b,
+            Err(e) => {
+                debug!(interface = %dev.interface, error = %e, "nl80211 scan dump unavailable");
+                return false;
+            }
+        };
+        let noise = self
+            .nl
+            .noise_by_frequency(ifindex)
+            .await
+            .unwrap_or_default();
+
+        let mut by_bssid: HashMap<&str, Vec<&BssMeasurement>> = HashMap::new();
+        for b in &bss {
+            by_bssid.entry(b.bssid.as_str()).or_default().push(b);
+        }
+        let mut matched = 0;
+        for ap in aps.iter_mut() {
+            let Some(candidates) = by_bssid.get(ap.bssid.as_str()) else {
+                // Not in the kernel cache: not heard for ~30 s. Keep NM's
+                // (older) data; no dBm reading exists for it.
+                continue;
+            };
+            let m = candidates
+                .iter()
+                .find(|m| m.frequency_mhz == ap.frequency_mhz)
+                .or(candidates.first())
+                .copied()
+                .expect("non-empty");
+            matched += 1;
+            apply_measurement(ap, m, noise.get(&m.frequency_mhz).copied());
+        }
+        debug!(interface = %dev.interface, kernel = bss.len(), nm = aps.len(), matched, "nl80211 enrichment");
+        true
     }
 
     /// Fail early with a precise reason when the radio can't scan.
@@ -418,7 +490,7 @@ impl WifiAdapterProvider for NetworkManagerProvider {
         let devices = Self::wifi_devices(&conn).await?;
         let mut adapters = Vec::with_capacity(devices.len());
         for dev in &devices {
-            adapters.push(Self::build_adapter(&conn, dev, radio).await);
+            adapters.push(self.build_adapter(&conn, dev, radio).await);
         }
         Ok(adapters)
     }
@@ -427,7 +499,7 @@ impl WifiAdapterProvider for NetworkManagerProvider {
         let conn = self.nm().await?;
         let radio = Self::radio_state(&conn).await;
         let dev = Self::find_device(&conn, id).await?;
-        Ok(Self::build_adapter(&conn, &dev, radio).await)
+        Ok(self.build_adapter(&conn, &dev, radio).await)
     }
 
     #[instrument(skip(self, request), fields(trigger = request.trigger))]
@@ -447,8 +519,9 @@ impl WifiAdapterProvider for NetworkManagerProvider {
             (false, None)
         };
 
-        let access_points = Self::read_access_points(&conn, &dev).await?;
-        info!(adapter = %id, count = access_points.len(), scan_triggered, "scan complete");
+        let mut access_points = Self::read_access_points(&conn, &dev).await?;
+        let enriched = self.enrich(&dev, &mut access_points).await;
+        info!(adapter = %id, count = access_points.len(), scan_triggered, enriched, "scan complete");
         Ok(ScanResult {
             adapter_id: id.clone(),
             provider: PROVIDER_ID.into(),
@@ -480,6 +553,25 @@ impl WifiAdapterProvider for NetworkManagerProvider {
         } else {
             (vec![], None)
         };
+        let bssid = prop::<String>(&ap, "HwAddress").map(|s| normalise_mac(&s));
+
+        // Live link statistics from the kernel, if they are for the same AP.
+        let station = match nl80211::ifindex(&dev.interface) {
+            Some(ifindex) => match self.nl.station(ifindex).await {
+                Ok(s) => s.filter(|s| Some(&s.bssid) == bssid.as_ref()),
+                Err(e) => {
+                    debug!(error = %e, "nl80211 station info unavailable");
+                    None
+                }
+            },
+            None => None,
+        };
+        let mut signal = prop::<u8>(&ap, "Strength")
+            .map(Signal::from_quality)
+            .unwrap_or_default();
+        if let Some(s) = &station {
+            signal.dbm = s.signal_avg_dbm.or(s.signal_dbm).map(f32::from);
+        }
 
         Ok(Some(ConnectionInfo {
             adapter_id: id.clone(),
@@ -487,15 +579,15 @@ impl WifiAdapterProvider for NetworkManagerProvider {
             ssid: prop_bytes(&ap, "Ssid")
                 .filter(|s| !s.is_empty())
                 .map(|s| String::from_utf8_lossy(&s).into_owned()),
-            bssid: prop::<String>(&ap, "HwAddress").map(|s| normalise_mac(&s)),
+            bssid,
             frequency_mhz,
             channel: frequency_mhz.and_then(channel_for_frequency),
             band: frequency_mhz.map(band_for_frequency),
             channel_width_mhz: prop::<u32>(&ap, "Bandwidth").filter(|b| *b > 0),
-            signal: prop::<u8>(&ap, "Strength")
-                .map(Signal::from_quality)
-                .unwrap_or_default(),
+            signal,
             bitrate_kbps: prop::<u32>(&dev.wireless, "Bitrate").filter(|b| *b > 0),
+            tx_rate: station.as_ref().and_then(|s| s.tx.clone()),
+            rx_rate: station.as_ref().and_then(|s| s.rx.clone()),
             security: Some(security(
                 prop(&ap, "Flags").unwrap_or(0),
                 prop(&ap, "WpaFlags").unwrap_or(0),
@@ -541,6 +633,12 @@ fn observation(
         channel: channel_for_frequency(frequency_mhz),
         band: band_for_frequency(frequency_mhz),
         channel_width_mhz: prop::<u32>(props, "Bandwidth").filter(|b| *b > 0),
+        // Refined with the HT Operation element if nl80211 data is available.
+        channel_center_mhz: channel_center_mhz(
+            frequency_mhz,
+            prop::<u32>(props, "Bandwidth").filter(|b| *b > 0),
+            None,
+        ),
         signal: prop::<u8>(props, "Strength")
             .map(Signal::from_quality)
             .unwrap_or_default(),
@@ -556,10 +654,45 @@ fn observation(
         noise_dbm: None,
         snr_db: None,
         channel_utilization_pct: None,
+        station_count: None,
         beacon_interval_tu: None,
         phy_type: None,
         wifi_generation: None,
     })
+}
+
+fn apply_wiphy(caps: &mut AdapterCapabilities, wiphy: &WiphyInfo) {
+    let has = |b: Band| Capability::from_bool(wiphy.bands.contains(&b));
+    caps.band_2ghz = has(Band::Band2_4GHz);
+    caps.band_5ghz = has(Band::Band5GHz);
+    caps.band_6ghz = has(Band::Band6GHz);
+    caps.monitor_mode = Capability::from_bool(wiphy.monitor_mode);
+    // 802.11 frame capture needs a monitor interface (and root).
+    caps.packet_capture = Capability::from_bool(wiphy.monitor_mode);
+    caps.ap_mode = Capability::from_bool(wiphy.ap_mode);
+}
+
+fn apply_measurement(ap: &mut AccessPointObservation, m: &BssMeasurement, noise_dbm: Option<f32>) {
+    ap.signal.dbm = m.signal_dbm;
+    if let Some(age) = m.seen_ms_ago {
+        ap.last_seen_age_ms = Some(age as u64);
+    }
+    ap.beacon_interval_tu = m.beacon_interval_tu;
+    let is_2ghz = ap.band == Band::Band2_4GHz;
+    ap.wifi_generation = m.elements.wifi_generation(is_2ghz);
+    ap.phy_type = Some(m.elements.phy_type(is_2ghz).to_string());
+    ap.channel_utilization_pct = m.elements.channel_utilization_pct();
+    ap.station_count = m.elements.station_count;
+    ap.channel_center_mhz = channel_center_mhz(
+        ap.frequency_mhz,
+        ap.channel_width_mhz,
+        m.elements.ht_secondary_offset,
+    );
+    ap.noise_dbm = noise_dbm;
+    ap.snr_db = match (m.signal_dbm, noise_dbm) {
+        (Some(s), Some(n)) => Some(s - n),
+        _ => None,
+    };
 }
 
 /// Seconds since boot including suspend (matches NM's CLOCK_BOOTTIME stamps).

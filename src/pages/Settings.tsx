@@ -3,6 +3,7 @@ import { api, asApiError } from "../api/tauri";
 import type { AppInfo } from "../types/project";
 import type { ApiError } from "../types/wifi";
 import { useWifi } from "../state/WifiContext";
+import { usePreferences, type SignalUnit } from "../state/Preferences";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { KeyValueGrid, KV } from "../components/KeyValue";
 
@@ -10,6 +11,7 @@ export type Theme = "system" | "dark" | "light";
 
 export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
   const { autoScanSeconds, setAutoScanSeconds } = useWifi();
+  const { signalUnit, setSignalUnit } = usePreferences();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -30,6 +32,24 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
                   {t[0]!.toUpperCase() + t.slice(1)}
                 </button>
               ))}
+            </div>
+          </KV>
+          <KV k="Signal unit">
+            <div className="segmented">
+              {(
+                [
+                  ["dbm", "dBm"],
+                  ["percent", "%"],
+                ] as [SignalUnit, string][]
+              ).map(([u, label]) => (
+                <button key={u} type="button" className={signalUnit === u ? "active" : ""} onClick={() => setSignalUnit(u)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="field-hint">
+              dBm is the measured signal level. % is NetworkManager's 0–100 quality value. If the chosen value isn't
+              available for a network, the other is shown with its own unit.
             </div>
           </KV>
           <KV k="Auto-scan interval">

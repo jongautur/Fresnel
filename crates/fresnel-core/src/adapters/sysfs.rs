@@ -34,15 +34,18 @@ pub fn bus_info(interface: &str) -> Option<BusInfo> {
             let product_id = read_hex_id(dev.join("device"));
             let sub_vendor = read_hex_id(dev.join("subsystem_vendor"));
             let sub_device = read_hex_id(dev.join("subsystem_device"));
-            let (vendor_name, product_name) = match (&vendor_id, &product_id) {
-                (Some(v), Some(p)) => lookup_ids(
-                    PCI_IDS,
-                    v,
-                    p,
-                    sub_vendor.as_deref().zip(sub_device.as_deref()),
-                ),
-                _ => (None, None),
+            let subsystem = sub_vendor.as_deref().zip(sub_device.as_deref());
+            let ids = match (&vendor_id, &product_id) {
+                (Some(v), Some(p)) => lookup_ids(PCI_IDS, v, p, subsystem),
+                _ => IdsMatch::default(),
             };
+            // Prefer the module name (subsystem) over the chipset name.
+            let known = match (&vendor_id, &product_id, subsystem) {
+                (Some(v), Some(p), Some((sv, sd))) => known_pci_module(v, p, sv, sd),
+                _ => None,
+            };
+            let vendor_name = ids.vendor;
+            let product_name = ids.subsystem.or(known.map(String::from)).or(ids.device);
             Some(BusInfo {
                 kind: BusKind::Pci,
                 vendor_id,
@@ -56,14 +59,14 @@ pub fn bus_info(interface: &str) -> Option<BusInfo> {
             let usb_dev = fs::canonicalize(&dev).ok()?.parent()?.to_path_buf();
             let vendor_id = read_hex_id(usb_dev.join("idVendor"));
             let product_id = read_hex_id(usb_dev.join("idProduct"));
-            let (db_vendor, db_product) = match (&vendor_id, &product_id) {
+            let ids = match (&vendor_id, &product_id) {
                 (Some(v), Some(p)) => lookup_ids(USB_IDS, v, p, None),
-                _ => (None, None),
+                _ => IdsMatch::default(),
             };
             Some(BusInfo {
                 kind: BusKind::Usb,
-                vendor_name: read_trimmed(usb_dev.join("manufacturer")).or(db_vendor),
-                product_name: read_trimmed(usb_dev.join("product")).or(db_product),
+                vendor_name: read_trimmed(usb_dev.join("manufacturer")).or(ids.vendor),
+                product_name: read_trimmed(usb_dev.join("product")).or(ids.device),
                 vendor_id,
                 product_id,
             })
@@ -85,17 +88,24 @@ pub fn bus_info(interface: &str) -> Option<BusInfo> {
     }
 }
 
-/// Look up vendor and product names in a pci.ids/usb.ids-format file.
-/// A subsystem match, when present, is preferred because it names the
-/// actual retail card (e.g. "Wi-Fi 6 AX201") rather than the chipset.
+/// Names found in a pci.ids/usb.ids-format file.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct IdsMatch {
+    vendor: Option<String>,
+    /// Chipset name, e.g. "Cannon Point-LP CNVi [Wireless-AC]".
+    device: Option<String>,
+    /// Module/retail card name from the subsystem entry, e.g. "Wireless-AC 9560".
+    subsystem: Option<String>,
+}
+
 fn lookup_ids(
     files: &[&str],
     vendor: &str,
     product: &str,
     subsystem: Option<(&str, &str)>,
-) -> (Option<String>, Option<String>) {
+) -> IdsMatch {
     let Some(content) = files.iter().find_map(|f| fs::read_to_string(f).ok()) else {
-        return (None, None);
+        return IdsMatch::default();
     };
     parse_ids(&content, vendor, product, subsystem)
 }
@@ -105,9 +115,8 @@ fn parse_ids(
     vendor: &str,
     product: &str,
     subsystem: Option<(&str, &str)>,
-) -> (Option<String>, Option<String>) {
-    let mut vendor_name = None;
-    let mut product_name = None;
+) -> IdsMatch {
+    let mut m = IdsMatch::default();
     let mut in_vendor = false;
     let mut in_product = false;
 
@@ -121,7 +130,8 @@ fn parse_ids(
                     let mut parts = rest.splitn(3, ' ');
                     if parts.next() == Some(sv) && parts.next() == Some(sd) {
                         if let Some(name) = parts.next() {
-                            return (vendor_name, Some(name.trim().to_string()));
+                            m.subsystem = Some(name.trim().to_string());
+                            return m;
                         }
                     }
                 }
@@ -131,7 +141,7 @@ fn parse_ids(
                 in_product = false;
                 if let Some((id, name)) = rest.split_once("  ") {
                     if id.eq_ignore_ascii_case(product) {
-                        product_name = Some(name.trim().to_string());
+                        m.device = Some(name.trim().to_string());
                         in_product = true;
                     }
                 }
@@ -144,13 +154,41 @@ fn parse_ids(
             // whose lines start with a letter followed by a space ("C 00 ...").
             if let Some((id, name)) = line.split_once("  ") {
                 if id.eq_ignore_ascii_case(vendor) {
-                    vendor_name = Some(name.trim().to_string());
+                    m.vendor = Some(name.trim().to_string());
                     in_vendor = true;
                 }
             }
         }
     }
-    (vendor_name, product_name)
+    m
+}
+
+/// Module names for Wi-Fi cards that pci.ids lists only by chipset.
+///
+/// Intel CNVi chipsets (the Wi-Fi MAC inside the PCH) are paired with a
+/// separate RF module (CRF) identified by the PCI subsystem ID. pci.ids often
+/// lacks the subsystem entries, so the chipset name ("Cannon Point-LP CNVi")
+/// is shown instead of the card. Mapping from the Linux iwlwifi device table.
+fn known_pci_module(
+    vendor: &str,
+    device: &str,
+    sub_vendor: &str,
+    sub_device: &str,
+) -> Option<&'static str> {
+    // Intel 9000-series CNVi chipsets: Cannon Point-LP/-H, Gemini Lake,
+    // Comet Lake-LP/-H.
+    const INTEL_CNVI_9000: &[&str] = &["9df0", "a370", "31dc", "30dc", "02f0", "06f0"];
+    if vendor != "8086" || sub_vendor != "8086" || !INTEL_CNVI_9000.contains(&device) {
+        return None;
+    }
+    match sub_device {
+        "0030" | "0034" | "0038" | "003c" | "0230" | "0234" | "0238" | "023c" => {
+            Some("Wireless-AC 9560")
+        }
+        "0060" | "0064" | "0260" | "0264" => Some("Wireless-AC 9461"),
+        "00a0" | "00a4" | "02a0" | "02a4" => Some("Wireless-AC 9462"),
+        _ => None,
+    }
 }
 
 /// Shorten "Intel Corporation" → "Intel", "Realtek Semiconductor Co., Ltd." → "Realtek".
@@ -214,28 +252,47 @@ mod tests {
 
     #[test]
     fn subsystem_preferred() {
-        let (v, p) = parse_ids(SAMPLE, "8086", "2725", Some(("8086", "0024")));
-        assert_eq!(v.as_deref(), Some("Intel Corporation"));
-        assert_eq!(p.as_deref(), Some("Wi-Fi 6E AX210 160MHz"));
+        let m = parse_ids(SAMPLE, "8086", "2725", Some(("8086", "0024")));
+        assert_eq!(m.vendor.as_deref(), Some("Intel Corporation"));
+        assert_eq!(m.subsystem.as_deref(), Some("Wi-Fi 6E AX210 160MHz"));
     }
 
     #[test]
     fn falls_back_to_chipset() {
-        let (_, p) = parse_ids(SAMPLE, "8086", "9df0", Some(("8086", "0030")));
-        assert_eq!(p.as_deref(), Some("Cannon Point-LP CNVi [Wireless-AC]"));
+        let m = parse_ids(SAMPLE, "8086", "9df0", Some(("8086", "0030")));
+        assert_eq!(
+            m.device.as_deref(),
+            Some("Cannon Point-LP CNVi [Wireless-AC]")
+        );
+        assert_eq!(m.subsystem, None);
     }
 
     #[test]
     fn other_vendor() {
-        let (v, p) = parse_ids(SAMPLE, "10ec", "c822", None);
-        assert_eq!(v.as_deref(), Some("Realtek Semiconductor Co., Ltd."));
-        assert!(p.unwrap().starts_with("RTL8822CE"));
+        let m = parse_ids(SAMPLE, "10ec", "c822", None);
+        assert_eq!(m.vendor.as_deref(), Some("Realtek Semiconductor Co., Ltd."));
+        assert!(m.device.unwrap().starts_with("RTL8822CE"));
         assert_eq!(short_vendor("Realtek Semiconductor Co., Ltd."), "Realtek");
         assert_eq!(short_vendor("Intel Corporation"), "Intel");
     }
 
     #[test]
     fn unknown_ids() {
-        assert_eq!(parse_ids(SAMPLE, "dead", "beef", None), (None, None));
+        assert_eq!(parse_ids(SAMPLE, "dead", "beef", None), IdsMatch::default());
+    }
+
+    #[test]
+    fn known_modules() {
+        assert_eq!(
+            known_pci_module("8086", "9df0", "8086", "0030"),
+            Some("Wireless-AC 9560")
+        );
+        assert_eq!(
+            known_pci_module("8086", "02f0", "8086", "0264"),
+            Some("Wireless-AC 9461")
+        );
+        // AX201 on the same chipset family is not guessed.
+        assert_eq!(known_pci_module("8086", "02f0", "8086", "0070"), None);
+        assert_eq!(known_pci_module("10ec", "9df0", "8086", "0030"), None);
     }
 }

@@ -8,9 +8,8 @@ use crate::state::AppState;
 
 fn init_logging() {
     // Override with e.g. RUST_LOG=fresnel_core=debug
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("info,fresnel_core=info,fresnel_lib=info,zbus=warn")
-    });
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,fresnel_core=info,fresnel_lib=info,zbus=warn"));
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(true)
@@ -19,10 +18,7 @@ fn init_logging() {
 
 pub fn run() {
     init_logging();
-    tracing::info!(
-        version = env!("CARGO_PKG_VERSION"),
-        "starting Fresnel"
-    );
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Fresnel");
 
     let result = tauri::Builder::default()
         .setup(|app| {

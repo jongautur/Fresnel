@@ -3,6 +3,7 @@ import { api, asApiError } from "../api/tauri";
 import type { Project } from "../types/project";
 import type { ApiError } from "../types/wifi";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { formatDateTime } from "../lib/format";
 
 export function Survey() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -75,8 +76,8 @@ export function Survey() {
               <tr key={p.id}>
                 <td>{p.name}</td>
                 <td>{p.customerName ?? <span className="muted">—</span>}</td>
-                <td className="mono">{new Date(p.createdAt).toLocaleString()}</td>
-                <td className="mono">{new Date(p.updatedAt).toLocaleString()}</td>
+                <td className="mono">{formatDateTime(p.createdAt)}</td>
+                <td className="mono">{formatDateTime(p.updatedAt)}</td>
                 <td className="num"><DeleteButton onConfirm={() => void remove(p.id)} /></td>
               </tr>
             ))}

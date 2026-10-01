@@ -1,8 +1,10 @@
 import type { Signal } from "../types/wifi";
 import { signalView } from "../lib/format";
+import { usePreferences } from "../state/Preferences";
 
 export function SignalCell({ signal, compact = false }: { signal: Signal; compact?: boolean }) {
-  const v = signalView(signal);
+  const { signalUnit } = usePreferences();
+  const v = signalView(signal, signalUnit);
   const title =
     v.unit === "%"
       ? "Signal quality reported by NetworkManager (0–100 %). This is not a dBm value."

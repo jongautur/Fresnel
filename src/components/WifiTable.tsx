@@ -5,9 +5,11 @@ import {
   SECURITY_LABEL,
   formatAge,
   formatBitrate,
+  phyShort,
   signalSortValue,
 } from "../lib/format";
 import { SignalCell } from "./SignalCell";
+import { usePreferences, type SignalUnit } from "../state/Preferences";
 
 type SortKey =
   | "ssid"
@@ -18,6 +20,8 @@ type SortKey =
   | "band"
   | "width"
   | "security"
+  | "phy"
+  | "load"
   | "age";
 type Dir = "asc" | "desc";
 
@@ -38,12 +42,14 @@ const COLUMNS: Column[] = [
   { key: "band", label: "Band", defaultDir: "asc" },
   { key: "width", label: "Width", align: "right", defaultDir: "desc" },
   { key: "security", label: "Security", defaultDir: "asc" },
+  { key: "phy", label: "PHY", defaultDir: "desc" },
+  { key: "load", label: "Load", align: "right", defaultDir: "desc" },
   { key: "age", label: "Seen", align: "right", defaultDir: "asc" },
 ];
 
 const BAND_ORDER: Record<Band, number> = { "2.4ghz": 0, "5ghz": 1, "6ghz": 2, "60ghz": 3, unknown: 4 };
 
-function compare(a: AccessPointObservation, b: AccessPointObservation, key: SortKey): number {
+function compare(a: AccessPointObservation, b: AccessPointObservation, key: SortKey, unit: SignalUnit): number {
   const num = (x: number | null | undefined, y: number | null | undefined) =>
     (x ?? Number.POSITIVE_INFINITY) - (y ?? Number.POSITIVE_INFINITY);
   switch (key) {
@@ -54,7 +60,7 @@ function compare(a: AccessPointObservation, b: AccessPointObservation, key: Sort
     case "bssid":
       return a.bssid.localeCompare(b.bssid);
     case "signal":
-      return signalSortValue(a.signal) - signalSortValue(b.signal);
+      return signalSortValue(a.signal, unit) - signalSortValue(b.signal, unit);
     case "channel":
       return BAND_ORDER[a.band] - BAND_ORDER[b.band] || num(a.channel, b.channel);
     case "frequency":
@@ -65,6 +71,10 @@ function compare(a: AccessPointObservation, b: AccessPointObservation, key: Sort
       return num(a.channelWidthMhz, b.channelWidthMhz);
     case "security":
       return SECURITY_LABEL[a.security.kind].localeCompare(SECURITY_LABEL[b.security.kind]);
+    case "phy":
+      return (a.wifiGeneration ?? 0) - (b.wifiGeneration ?? 0);
+    case "load":
+      return (a.channelUtilizationPct ?? -1) - (b.channelUtilizationPct ?? -1);
     case "age":
       return num(a.lastSeenAgeMs, b.lastSeenAgeMs);
   }
@@ -72,9 +82,9 @@ function compare(a: AccessPointObservation, b: AccessPointObservation, key: Sort
 
 const BAND_FILTERS: { value: Band | "all"; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "2.4ghz", label: "2.4" },
-  { value: "5ghz", label: "5" },
-  { value: "6ghz", label: "6" },
+  { value: "2.4ghz", label: "2.4 GHz" },
+  { value: "5ghz", label: "5 GHz" },
+  { value: "6ghz", label: "6 GHz" },
 ];
 
 /** Rows older than this are probably out of range; NM keeps BSSes for minutes. */
@@ -86,7 +96,16 @@ interface Group {
   rows: AccessPointObservation[];
 }
 
-export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservation[] }) {
+export function WifiTable({
+  accessPoints,
+  highlightSsid = null,
+  onHighlight,
+}: {
+  accessPoints: AccessPointObservation[];
+  highlightSsid?: string | null;
+  onHighlight?: (ssid: string | null) => void;
+}) {
+  const { signalUnit } = usePreferences();
   const [sortKey, setSortKey] = useState<SortKey>("signal");
   const [dir, setDir] = useState<Dir>("desc");
   const [filter, setFilter] = useState("");
@@ -114,8 +133,8 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
     );
     const sign = dir === "asc" ? 1 : -1;
     // Tie-break on BSSID for a stable order between scans.
-    return filtered.sort((a, b) => sign * compare(a, b, sortKey) || a.bssid.localeCompare(b.bssid));
-  }, [accessPoints, filter, band, sortKey, dir]);
+    return filtered.sort((a, b) => sign * compare(a, b, sortKey, signalUnit) || a.bssid.localeCompare(b.bssid));
+  }, [accessPoints, filter, band, sortKey, dir, signalUnit]);
 
   // SSID grouping is purely presentational: groups follow the order in which
   // their first member appears in the sorted list.
@@ -134,6 +153,8 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
   }, [rows]);
 
   const allQuality = accessPoints.length > 0 && accessPoints.every((a) => a.signal.dbm == null);
+  // Only relevant when dBm is the chosen unit: rows that fall back to %.
+  const someQualityOnly = signalUnit === "dbm" && accessPoints.some((a) => a.signal.dbm == null);
   const bandCounts = useMemo(() => {
     const c: Partial<Record<Band, number>> = {};
     for (const ap of accessPoints) c[ap.band] = (c[ap.band] ?? 0) + 1;
@@ -153,10 +174,21 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
     return (
       <tr
         key={ap.bssid}
-        className={[ap.isConnected ? "row-connected" : "", stale ? "row-stale" : "", inGroup ? "row-child" : ""].join(" ")}
+        className={[
+          ap.isConnected ? "row-connected" : "",
+          !ap.isConnected && highlightSsid != null && ap.ssid === highlightSsid ? "row-highlighted" : "",
+          stale ? "row-stale" : "",
+          inGroup ? "row-child" : "",
+          onHighlight && ap.ssid ? "row-clickable" : "",
+        ].join(" ")}
+        onClick={
+          onHighlight && ap.ssid ? () => onHighlight(ap.ssid === highlightSsid ? null : ap.ssid) : undefined
+        }
       >
         <td className="col-ssid">
-          {ap.isConnected && <span className="connected-mark" title="Currently connected BSSID">●</span>}
+          <span className="conn-gutter" title={ap.isConnected ? "Currently connected BSSID" : undefined}>
+            {ap.isConnected && "●"}
+          </span>
           {ap.ssid ?? <span className="muted italic">hidden</span>}
         </td>
         <td className="mono">{ap.bssid}</td>
@@ -166,6 +198,15 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
         <td><span className={`band band-${ap.band.replace(".", "_")}`}>{BAND_LABEL[ap.band]}</span></td>
         <td className="mono num">{ap.channelWidthMhz ?? "—"}</td>
         <td title={securityTitle(ap)}>{SECURITY_LABEL[ap.security.kind]}</td>
+        <td className="mono" title={ap.wifiGeneration ? `Wi-Fi ${ap.wifiGeneration} (${ap.phyType})` : (ap.phyType ?? undefined)}>
+          {phyShort(ap.phyType)}
+        </td>
+        <td
+          className="mono num"
+          title={ap.stationCount != null ? `${ap.stationCount} associated clients (BSS Load)` : "AP does not advertise BSS Load"}
+        >
+          {ap.channelUtilizationPct != null ? `${ap.channelUtilizationPct.toFixed(0)}%` : "—"}
+        </td>
         <td className="mono num" title={stale ? "Not heard recently — probably out of range" : undefined}>
           {formatAge(ap.lastSeenAgeMs)}
         </td>
@@ -189,7 +230,11 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
                 onClick={() => setBand(b.value)}
               >
                 {b.label}
-                {b.value !== "all" && <span className="seg-count">{bandCounts[b.value] ?? 0}</span>}
+                {b.value !== "all" && (
+                  <span className="seg-count" title={`${bandCounts[b.value] ?? 0} BSSIDs`}>
+                    {bandCounts[b.value] ?? 0}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -205,9 +250,15 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
           />
         </div>
       </header>
-      {allQuality && (
+      {allQuality && signalUnit === "dbm" && (
         <div className="table-note">
-          Signal is NetworkManager's 0–100 % quality value, not dBm. A dBm-capable provider (nl80211) is planned.
+          This adapter reports no dBm values here; signal is NetworkManager's 0–100 % quality value, not dBm.
+        </div>
+      )}
+      {!allQuality && someQualityOnly && (
+        <div className="table-note">
+          Rows shown in % were not heard by the radio in the last ~30 s (NetworkManager remembers them longer),
+          so no dBm reading exists for them.
         </div>
       )}
       <div className="table-scroll">
@@ -221,7 +272,7 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
                   onClick={() => onSort(c)}
                   aria-sort={sortKey === c.key ? (dir === "asc" ? "ascending" : "descending") : "none"}
                 >
-                  {c.key === "signal" && allQuality ? "Signal %" : c.label}
+                  {c.key === "signal" ? (signalUnit === "dbm" && !allQuality ? "Signal dBm" : "Signal %") : c.label}
                   <span className="sort-arrow">{sortKey === c.key ? (dir === "asc" ? "▲" : "▼") : ""}</span>
                 </th>
               ))}
@@ -238,16 +289,18 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
             {!grouped && rows.map((ap) => renderRow(ap, false))}
             {grouped &&
               groups.map((g) => {
-                const best = g.rows.reduce((m, r) => (signalSortValue(r.signal) > signalSortValue(m.signal) ? r : m));
+                const best = g.rows.reduce((m, r) =>
+                  signalSortValue(r.signal, signalUnit) > signalSortValue(m.signal, signalUnit) ? r : m,
+                );
                 const bands = [...new Set(g.rows.map((r) => BAND_LABEL[r.band]))].join(", ");
                 const isCollapsed = collapsed.has(g.key);
                 return (
                   <Fragment key={g.key}>
                     <tr className="row-group" onClick={() => toggleGroup(g.key)}>
                       <td className="col-ssid">
+                        <span className="conn-gutter">{g.rows.some((r) => r.isConnected) && "●"}</span>
                         <span className="group-toggle">{isCollapsed ? "▸" : "▾"}</span>
                         {g.ssid ?? <span className="muted italic">hidden networks</span>}
-                        {g.rows.some((r) => r.isConnected) && <span className="connected-mark">●</span>}
                       </td>
                       <td className="muted">{g.rows.length} BSSID{g.rows.length > 1 ? "s" : ""}</td>
                       <td><SignalCell signal={best.signal} /></td>
@@ -256,6 +309,8 @@ export function WifiTable({ accessPoints }: { accessPoints: AccessPointObservati
                       <td className="muted">{bands}</td>
                       <td />
                       <td className="muted">{[...new Set(g.rows.map((r) => SECURITY_LABEL[r.security.kind]))].join(", ")}</td>
+                      <td />
+                      <td />
                       <td />
                     </tr>
                     {!isCollapsed && g.rows.map((ap) => renderRow(ap, true))}

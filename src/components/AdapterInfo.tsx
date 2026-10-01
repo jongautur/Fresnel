@@ -36,7 +36,7 @@ export function AdapterInfo({ adapter }: { adapter: Adapter | null }) {
             </KV>
             <KV k="Bus" mono>{busSummary(adapter)}</KV>
             <KV k="Bands">{bandsSummary(adapter)}</KV>
-            <KV k="Provider" mono>{adapter.provider}</KV>
+            <KV k="Data sources" mono>{adapter.dataSources.join(" + ")}</KV>
             {adapter.statusDetail && <KV k="Status">{adapter.statusDetail}</KV>}
           </KeyValueGrid>
           <div className="caps">

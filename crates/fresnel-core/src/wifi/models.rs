@@ -130,6 +130,8 @@ pub struct Adapter {
     pub id: AdapterId,
     /// Provider currently serving this adapter, e.g. `networkmanager`.
     pub provider: String,
+    /// Backends actually supplying data, e.g. `["networkmanager", "nl80211"]`.
+    pub data_sources: Vec<String>,
     pub interface_name: Option<String>,
     pub display_name: String,
     pub driver: Option<String>,
@@ -323,6 +325,9 @@ pub struct AccessPointObservation {
     pub channel: Option<u16>,
     pub band: Band,
     pub channel_width_mhz: Option<u32>,
+    /// Centre of the whole occupied channel (differs from `frequency_mhz`,
+    /// the primary, for 40 MHz and wider). `None` if undeterminable.
+    pub channel_center_mhz: Option<u32>,
     pub signal: Signal,
     pub security: Security,
     pub mode: WifiMode,
@@ -336,6 +341,8 @@ pub struct AccessPointObservation {
     pub noise_dbm: Option<f32>,
     pub snr_db: Option<f32>,
     pub channel_utilization_pct: Option<f32>,
+    /// Associated client count from the AP's BSS Load element.
+    pub station_count: Option<u16>,
     pub beacon_interval_tu: Option<u16>,
     pub phy_type: Option<String>,
     /// e.g. 4 (n), 5 (ac), 6 (ax), 7 (be).
@@ -386,8 +393,24 @@ pub struct ConnectionInfo {
     pub signal: Signal,
     /// Current link rate.
     pub bitrate_kbps: Option<u32>,
+    pub tx_rate: Option<LinkRate>,
+    pub rx_rate: Option<LinkRate>,
     pub security: Option<Security>,
     /// IPv4 addresses in CIDR notation.
     pub ipv4_addresses: Vec<String>,
     pub ipv4_gateway: Option<String>,
+}
+
+/// Rate of the current link in one direction.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkRate {
+    pub bitrate_kbps: Option<u32>,
+    /// "HT", "VHT", "HE" or "EHT"; `None` for legacy rates.
+    pub phy: Option<String>,
+    pub mcs: Option<u8>,
+    /// Spatial streams.
+    pub nss: Option<u8>,
+    pub width_mhz: Option<u32>,
+    pub short_gi: bool,
 }

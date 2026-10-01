@@ -2,6 +2,7 @@
 //!
 //!   cargo run -p fresnel-core --example probe            # list + cached results
 //!   cargo run -p fresnel-core --example probe -- --scan  # trigger a fresh scan
+//!   cargo run -p fresnel-core --example probe -- --scan --json  # scan result as JSON
 //!   RUST_LOG=fresnel_core=debug cargo run -p fresnel-core --example probe
 
 use std::sync::Arc;
@@ -54,6 +55,9 @@ async fn main() {
             )
             .await
         {
+            Ok(r) if std::env::args().any(|a| a == "--json") => {
+                println!("{}", serde_json::to_string(&r).unwrap());
+            }
             Ok(r) => {
                 println!(
                     "\nscan: triggered={} notice={:?} {} BSSIDs in {} ms",
@@ -63,36 +67,26 @@ async fn main() {
                     (r.completed_at - r.started_at).num_milliseconds()
                 );
                 println!(
-                    "{:<24} {:<17} {:>4} {:>4} {:>5} {:>6} {:>5} {:<18} {:>6} Conn",
-                    "SSID",
-                    "BSSID",
-                    "Sig%",
-                    "Ch",
-                    "MHz",
-                    "Band",
-                    "Width",
-                    "Security",
-                    "Age",
+                    "{:<24} {:<17} {:>6} {:>4} {:>4} {:>5} {:>5} {:>6} {:<9} {:<18} {:>5} {:>4} {:>4} Conn",
+                    "SSID", "BSSID", "dBm", "Sig%", "Ch", "MHz", "Width", "Centre", "PHY", "Security", "Age", "Util", "STAs",
                 );
+                let opt = |v: Option<String>| v.unwrap_or_else(|| "-".into());
                 for ap in &r.access_points {
                     println!(
-                        "{:<24} {:<17} {:>4} {:>4} {:>5} {:>6} {:>5} {:<18} {:>6} {}",
+                        "{:<24} {:<17} {:>6} {:>4} {:>4} {:>5} {:>5} {:>6} {:<9} {:<18} {:>5} {:>4} {:>4} {}",
                         ap.ssid.as_deref().unwrap_or("<hidden>"),
                         ap.bssid,
-                        ap.signal
-                            .quality_percent
-                            .map(|q| q.to_string())
-                            .unwrap_or("-".into()),
-                        ap.channel.map(|c| c.to_string()).unwrap_or("-".into()),
+                        opt(ap.signal.dbm.map(|d| format!("{d:.0}"))),
+                        opt(ap.signal.quality_percent.map(|q| q.to_string())),
+                        opt(ap.channel.map(|c| c.to_string())),
                         ap.frequency_mhz,
-                        ap.band.to_string(),
-                        ap.channel_width_mhz
-                            .map(|w| w.to_string())
-                            .unwrap_or("-".into()),
+                        opt(ap.channel_width_mhz.map(|w| w.to_string())),
+                        opt(ap.channel_center_mhz.map(|c| c.to_string())),
+                        opt(ap.phy_type.clone()),
                         format!("{:?}", ap.security.kind),
-                        ap.last_seen_age_ms
-                            .map(|m| format!("{}s", m / 1000))
-                            .unwrap_or("-".into()),
+                        opt(ap.last_seen_age_ms.map(|m| format!("{:.1}s", m as f64 / 1000.0))),
+                        opt(ap.channel_utilization_pct.map(|u| format!("{u:.0}%"))),
+                        opt(ap.station_count.map(|c| c.to_string())),
                         if ap.is_connected { "*" } else { "" },
                     );
                 }

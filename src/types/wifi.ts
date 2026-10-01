@@ -42,6 +42,8 @@ export interface BusInfo {
 export interface Adapter {
   id: AdapterId;
   provider: string;
+  /** Backends actually supplying data, e.g. ["networkmanager", "nl80211"]. */
+  dataSources: string[];
   interfaceName: string | null;
   displayName: string;
   driver: string | null;
@@ -111,6 +113,8 @@ export interface AccessPointObservation {
   channel: number | null;
   band: Band;
   channelWidthMhz: number | null;
+  /** Centre of the whole occupied channel; differs from the primary for ≥40 MHz. */
+  channelCenterMhz: number | null;
   signal: Signal;
   security: Security;
   mode: WifiMode;
@@ -120,6 +124,7 @@ export interface AccessPointObservation {
   noiseDbm: number | null;
   snrDb: number | null;
   channelUtilizationPct: number | null;
+  stationCount: number | null;
   beaconIntervalTu: number | null;
   phyType: string | null;
   wifiGeneration: number | null;
@@ -151,9 +156,21 @@ export interface ConnectionInfo {
   channelWidthMhz: number | null;
   signal: Signal;
   bitrateKbps: number | null;
+  txRate: LinkRate | null;
+  rxRate: LinkRate | null;
   security: Security | null;
   ipv4Addresses: string[];
   ipv4Gateway: string | null;
+}
+
+export interface LinkRate {
+  bitrateKbps: number | null;
+  /** "HT" | "VHT" | "HE" | "EHT"; null for legacy rates */
+  phy: string | null;
+  mcs: number | null;
+  nss: number | null;
+  widthMhz: number | null;
+  shortGi: boolean;
 }
 
 // Mirror of fresnel-core error.rs `WifiError::kind()`.

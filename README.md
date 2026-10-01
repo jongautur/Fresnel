@@ -3,8 +3,9 @@
 Native Linux desktop tool for Wi-Fi analysis and site surveys.
 Tauri 2 · Rust · React/TypeScript · SQLite · NetworkManager (D-Bus). Fully offline.
 
-**Status: v0.1**: adapter discovery, BSSID scanning, current connection, live view,
-SQLite project storage. Heatmaps, floor plans and active tests come later.
+**Status: v0.2**: adapter discovery, BSSID scanning with real dBm (nl80211),
+current connection with TX/RX link rates, channel overlap map, dBm / % display setting,
+SQLite project storage. Floor plans, survey measurements, heatmaps and active tests come later.
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Prerequisites (Ubuntu/Debian)
@@ -62,15 +63,17 @@ Flatpak isn't targeted on purpose: future monitor-mode and USB-probe access conf
 | `src-tauri/` | Thin Tauri shell: app state and IPC commands |
 | `src/` | React UI (`api/tauri.ts` is the only file that calls the backend) |
 
-## Known limitations of the NetworkManager provider
+## Where the data comes from
 
-- Signal is NM's **0–100 % quality**, not dBm. The model keeps `dbm` and `qualityPercent`
-  as separate fields, and the UI always labels the unit.
-- 6 GHz support shows as *unknown* because NM has no flag for it.
-- NM keeps BSSes in its list for a while after they are last heard. The **Seen** column
-  shows the age, and rows older than 30 s are dimmed.
+NetworkManager triggers scans and supplies the BSS list, connection state and
+security. The kernel's nl80211 interface (read-only, no root) adds real **dBm**,
+supported bands (incl. 6 GHz), monitor-mode support, PHY generation, BSS Load and
+TX/RX link rates. Noise is shown only on drivers that report it (not iwlwifi).
 
-All three are planned to be fixed by a future nl80211 provider (dBm, wiphy bands, noise).
+- If the driver can't report dBm, signal falls back to NM's 0–100 % quality, always
+  labelled as %.
+- NM remembers BSSes for minutes; the kernel only ~30 s. Entries the kernel no longer
+  has show % instead of dBm, and the **Seen** column dims rows older than 30 s.
 
 ## License
 
