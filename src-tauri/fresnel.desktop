@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Fresnel
+GenericName=Wi-Fi Analyzer
+Comment={{comment}}
+Exec={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories=Network;Utility;
+Keywords=wifi;wireless;survey;scan;heatmap;

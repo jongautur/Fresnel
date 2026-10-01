@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window. App commands are allowed by default; only core plugin permissions are listed here.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

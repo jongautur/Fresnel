@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = ["crates/fresnel-core", "src-tauri"]
+# src-tauri needs WebKitGTK dev packages; build the core alone with
+# `cargo build -p fresnel-core` on machines without them.
+default-members = ["crates/fresnel-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.80"
+
+[workspace.dependencies]
+fresnel-core = { path = "crates/fresnel-core" }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite_migration = "2.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
