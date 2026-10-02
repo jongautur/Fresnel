@@ -1093,6 +1093,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "windows",
  "wl-nl80211",
  "zbus",
 ]

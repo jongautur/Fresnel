@@ -2,8 +2,8 @@
 
 Native desktop tool for Wi-Fi analysis and site surveys, for Linux and Windows.
 Tauri 2 · Rust · React/TypeScript · SQLite. Fully offline.
-Linux reads Wi-Fi through NetworkManager (D-Bus) and nl80211; the Windows provider
-(Native Wifi API) is in progress, so scanning currently works on Linux only.
+Linux reads Wi-Fi through NetworkManager (D-Bus) and nl80211; Windows uses the
+Native Wifi API. Both operate entirely offline.
 
 **Status: v0.3**: adapter discovery, BSSID scanning with real dBm (nl80211),
 current connection with TX/RX link rates, channel overlap map, dBm / % display setting.
@@ -109,9 +109,10 @@ TX/RX link rates. Noise is shown only on drivers that report it (not iwlwifi).
 - NM remembers BSSes for minutes; the kernel only ~30 s. Entries the kernel no longer
   has show % instead of dBm, and the **Seen** column dims rows older than 30 s.
 
-On Windows, the planned provider uses the Native Wifi API (`WlanScan`,
-`WlanGetNetworkBssList`), which reports dBm and % side by side. Fields an OS doesn't
-report stay empty rather than being estimated.
+On Windows, Native Wifi (`WlanScan`, `WlanGetNetworkBssList`) reports dBm and % side
+by side. Fresnel rejects drivers that synthesize dBm from %, and leaves fields Windows
+doesn't report empty rather than estimating them. Windows may require both Location
+services and desktop-app Location access for BSSIDs; see [Windows hardware testing](docs/windows-testing.md).
 
 ## Survey measurements
 

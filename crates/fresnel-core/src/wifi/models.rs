@@ -31,6 +31,11 @@ impl AdapterId {
         Self(format!("linux:{interface_name}"))
     }
 
+    /// Native Wifi interface GUID, in its single persisted spelling.
+    pub fn windows(guid: &str) -> Self {
+        Self(format!("windows:{}", guid.to_ascii_lowercase()))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

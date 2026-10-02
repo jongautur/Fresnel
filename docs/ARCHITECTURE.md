@@ -84,7 +84,7 @@ React UI ──invoke──▶ Tauri commands ──▶ Scanner / Registry / Dat
                                               ▼
                                    dyn WifiAdapterProvider
                                    ├── NetworkManagerProvider   (Linux, + nl80211 helper)
-                                   ├── WindowsProvider          (in progress, Native Wifi API)
+                                   ├── WindowsProvider          (Native Wifi API)
                                    ├── FakeProvider             (tests only)
                                    ├── Nl80211Provider          (future)
                                    ├── PcapMonitorProvider      (future)

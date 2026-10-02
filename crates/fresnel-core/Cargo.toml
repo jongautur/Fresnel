@@ -26,6 +26,17 @@ tracing.workspace = true
 zbus.workspace = true
 wl-nl80211.workspace = true
 
+# Native Wifi is a Windows-only API. Keeping this target-specific avoids
+# pulling Windows import libraries into Linux builds.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_WiFi",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinSock",
+] }
+
 [dev-dependencies]
 # test-util: paused virtual time, so timeout tests don't wait in real time.
 tokio = { workspace = true, features = ["test-util"] }
