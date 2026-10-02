@@ -7,7 +7,9 @@ pub mod diagnostics;
 pub mod findings;
 pub mod notes;
 pub mod projects;
+pub mod report;
 pub mod requirements;
+pub mod settings;
 pub mod survey;
 pub mod wifi;
 

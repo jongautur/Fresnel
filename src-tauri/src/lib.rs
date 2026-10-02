@@ -58,6 +58,14 @@ macro_rules! app_commands {
             commands::notes::photo_report_image,
             commands::notes::update_photo,
             commands::notes::delete_photo,
+            commands::report::floor_annotations,
+            commands::report::save_export,
+            commands::report::open_export,
+            commands::settings::get_branding,
+            commands::settings::set_branding,
+            commands::settings::branding_logo,
+            commands::settings::set_branding_logo,
+            commands::settings::clear_branding_logo,
             commands::findings::survey_findings,
             commands::findings::set_bssid_mark,
             commands::findings::clear_bssid_mark,
@@ -88,6 +96,8 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             logging::attach_file(app.path().app_log_dir().map_err(|e| e.to_string()));
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Fresnel");
@@ -403,6 +413,59 @@ mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::read_dir(&photos_dir).unwrap().count(), 0);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Branding: names as JSON, the logo as a raw body both ways.
+    #[test]
+    fn branding_over_ipc() {
+        let dir = std::env::temp_dir().join(format!("fresnel-ipc-brand-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let app = mock_builder()
+            .manage(AppState::new(dir.clone()))
+            .invoke_handler(app_commands!())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let invoke = |cmd: &str, body: InvokeBody| {
+            get_ipc_response(&webview, request(cmd, body, HeaderMap::new()))
+        };
+
+        let info = invoke(
+            "set_branding",
+            InvokeBody::Json(serde_json::json!({
+                "branding": { "technicianName": " Ada ", "companyName": null }
+            })),
+        )
+        .unwrap()
+        .deserialize::<serde_json::Value>()
+        .unwrap();
+        assert_eq!(info["technicianName"], "Ada");
+        assert_eq!(info["logo"], serde_json::Value::Null);
+
+        let mut png = Vec::new();
+        image::RgbImage::new(8, 4)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let info = invoke("set_branding_logo", InvokeBody::Raw(png.clone()))
+            .unwrap()
+            .deserialize::<serde_json::Value>()
+            .unwrap();
+        assert_eq!(info["logo"]["mime"], "image/png");
+        match invoke("branding_logo", InvokeBody::Json(serde_json::json!({}))).unwrap() {
+            InvokeResponseBody::Raw(bytes) => assert_eq!(bytes, png),
+            other => panic!("expected raw bytes, got {other:?}"),
+        }
+
+        let err = invoke(
+            "set_branding_logo",
+            InvokeBody::Raw(b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec()),
+        )
+        .unwrap_err();
+        assert_eq!(err["kind"], "invalid_input");
 
         let _ = std::fs::remove_dir_all(dir);
     }

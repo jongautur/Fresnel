@@ -305,6 +305,27 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     })
 }
 
+/// Replace `path` with `bytes` through a sibling temporary file, synced and
+/// renamed over it: readers see the old file or the new one, never a part.
+/// If anything fails, the old file is left as it was.
+pub fn replace_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
+    let tmp = path.with_file_name(format!(".{name}.tmp-{}", std::process::id()));
+    let write = || -> io::Result<()> {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        drop(f);
+        retry(|| fs::rename(&tmp, path))
+    };
+    write().inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })
+}
+
 /// Errors that may pass on their own: on Windows another process (antivirus,
 /// search indexer) holding the file open.
 fn is_transient(e: &io::Error) -> bool {

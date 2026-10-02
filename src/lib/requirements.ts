@@ -19,9 +19,11 @@ import {
   STATUS_CRITICAL,
   STATUS_GOOD,
   estimateAt,
+  indexPoints,
   influenceRadiusPx,
   type HeatGrid,
   type HeatPoint,
+  type PointSource,
 } from "./heatmap";
 
 export const RULE_LABEL: Record<Rule, string> = {
@@ -92,7 +94,16 @@ export interface AreaEstimate {
   nearestId: number;
 }
 
-export function requirementsAt(inputs: AreaInputs, x: number, y: number, radius: number): AreaEstimate | null {
+/** `AreaInputs` with each point list possibly indexed (built for one radius). */
+export interface AreaLookup {
+  values: RequirementValues;
+  primary: PointSource<IdPoint>;
+  secondary: PointSource;
+  cochannel: PointSource;
+  discrete: Map<number, boolean>;
+}
+
+export function requirementsAt(inputs: AreaLookup, x: number, y: number, radius: number): AreaEstimate | null {
   const v = inputs.values;
   const e = estimateAt(inputs.primary, x, y, radius);
   if (!e) return null;
@@ -133,12 +144,18 @@ export function buildRequirementsGrid(plan: FloorPlan, ppm: number | null, input
   const rgba = new Uint8ClampedArray(cols * rows * 4);
   const good = rgb(STATUS_GOOD);
   const bad = rgb(STATUS_CRITICAL);
+  const lookup: AreaLookup = {
+    ...inputs,
+    primary: indexPoints(inputs.primary, radius),
+    secondary: indexPoints(inputs.secondary, radius),
+    cochannel: indexPoints(inputs.cochannel, radius),
+  };
   let mapped = 0;
   let passing = 0;
   for (let r = 0; r < rows; r++) {
     const y = (r + 0.5) * cell;
     for (let c = 0; c < cols; c++) {
-      const e = requirementsAt(inputs, (c + 0.5) * cell, y, radius);
+      const e = requirementsAt(lookup, (c + 0.5) * cell, y, radius);
       if (!e) continue;
       mapped++;
       if (e.pass) passing++;

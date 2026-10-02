@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use fresnel_core::database::{Database, OpenError};
+use fresnel_core::settings::SettingsStore;
 use fresnel_core::survey::floorplan::PlanStore;
 use fresnel_core::survey::photos::PhotoStore;
 use fresnel_core::wifi::scanner::Scanner;
@@ -14,6 +15,10 @@ pub struct AppState {
     pub db_path: PathBuf,
     pub plans: Arc<PlanStore>,
     pub photos: Arc<PhotoStore>,
+    /// Report branding (settings.json + logo in the data directory).
+    pub settings: Arc<SettingsStore>,
+    /// The last file `save_export` wrote: the only path "Open" may open.
+    pub last_export: Mutex<Option<PathBuf>>,
     /// The app stays usable for live scanning even if the database can't be
     /// opened (e.g. read-only home); project commands then return the error.
     db: Mutex<DbSlot>,
@@ -42,6 +47,7 @@ impl AppState {
         let (state, notice) = open_or_recover(&db_path, &[&plans_dir, &photos_dir]);
         let plans = Arc::new(PlanStore::new(plans_dir));
         let photos = Arc::new(PhotoStore::new(photos_dir));
+        let settings = Arc::new(SettingsStore::new(data_dir.clone()));
         if let DbState::Ready(db) = &state {
             collect_garbage(db, &plans, &photos);
         }
@@ -51,6 +57,8 @@ impl AppState {
             db_path,
             plans,
             photos,
+            settings,
+            last_export: Mutex::new(None),
             db: Mutex::new(DbSlot { state, notice }),
         }
     }

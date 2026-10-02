@@ -118,6 +118,104 @@ export function influenceRadiusPx(plan: FloorPlan, ppm: number | null): number {
   return ppm ? INFLUENCE_M * ppm : INFLUENCE_UNSCALED * Math.max(plan.width, plan.height);
 }
 
+// ---------------------------------------------------------------------------
+// Spatial index: each grid cell only visits points that can influence it
+// ---------------------------------------------------------------------------
+
+/** Above this many buckets, buckets grow (still correct, less selective). */
+const MAX_BUCKETS = 65_536;
+/** Buckets are reach / SPLIT wide; a lookup visits (2 × SPLIT + 1)² of them. */
+const SPLIT = 2;
+
+/**
+ * Points bucketed on a uniform grid (buckets reach / SPLIT wide), so a
+ * lookup only visits the buckets that can hold points within `reach` of it.
+ * Candidates keep the input order, so IDW sums (and ties for "nearest") come
+ * out bit for bit as with a scan over every point.
+ */
+export class PointIndex<P extends HeatPoint = HeatPoint> {
+  private readonly x0: number;
+  private readonly y0: number;
+  private readonly size: number;
+  private readonly cols: number;
+  private readonly rows: number;
+  /** Input indices per bucket, ascending. */
+  private readonly buckets: number[][];
+  /** Merged neighbourhoods, built on first use; padded by SPLIT buckets on each side. */
+  private readonly near: (P[] | undefined)[];
+
+  constructor(
+    readonly pts: readonly P[],
+    reach: number,
+  ) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of pts) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
+    if (!pts.length) x0 = y0 = x1 = y1 = 0;
+    const span = Math.max(x1 - x0, y1 - y0, 1);
+    // The margin keeps rounding in the divisions below from ever putting two
+    // spots within `reach` of each other more than SPLIT buckets apart.
+    let size = Number.isFinite(reach) && reach > 0 ? (reach * 1.0001) / SPLIT : span * 2;
+    size = Math.max(size, Math.sqrt(((x1 - x0 + size) * (y1 - y0 + size)) / MAX_BUCKETS));
+    this.x0 = x0;
+    this.y0 = y0;
+    this.size = size;
+    this.cols = Math.floor((x1 - x0) / size) + 1;
+    this.rows = Math.floor((y1 - y0) / size) + 1;
+    this.buckets = Array.from({ length: this.cols * this.rows }, () => []);
+    pts.forEach((p, i) => {
+      const bx = Math.floor((p.x - x0) / size);
+      const by = Math.floor((p.y - y0) / size);
+      this.buckets[by * this.cols + bx]!.push(i);
+    });
+    this.near = new Array((this.cols + 2 * SPLIT) * (this.rows + 2 * SPLIT));
+  }
+
+  /** Every point within `reach` (per axis) of (x, y), and maybe a few more; input order. */
+  candidates(x: number, y: number): readonly P[] {
+    const bx = Math.floor((x - this.x0) / this.size);
+    const by = Math.floor((y - this.y0) / this.size);
+    if (bx < -SPLIT || by < -SPLIT || bx >= this.cols + SPLIT || by >= this.rows + SPLIT) return [];
+    const slot = (by + SPLIT) * (this.cols + 2 * SPLIT) + (bx + SPLIT);
+    let list = this.near[slot];
+    if (!list) {
+      const idx: number[] = [];
+      for (let j = Math.max(0, by - SPLIT); j <= Math.min(this.rows - 1, by + SPLIT); j++)
+        for (let i = Math.max(0, bx - SPLIT); i <= Math.min(this.cols - 1, bx + SPLIT); i++)
+          idx.push(...this.buckets[j * this.cols + i]!);
+      idx.sort((a, b) => a - b);
+      list = idx.map((i) => this.pts[i]!);
+      this.near[slot] = list;
+    }
+    return list;
+  }
+}
+
+/** Points as a plain list (scanned in full) or indexed. */
+export type PointSource<P extends HeatPoint = HeatPoint> = readonly P[] | PointIndex<P>;
+
+let indexing = true;
+
+/**
+ * Turn the spatial index off (every cell scans every point, as before it
+ * existed). For the benchmark's before/after comparison only.
+ */
+export function setSpatialIndexing(on: boolean): void {
+  indexing = on;
+}
+
+/** The lookup the grid builders use for estimates with this `radius`. */
+export function indexPoints<P extends HeatPoint>(pts: readonly P[], radius: number): PointSource<P> {
+  return indexing ? new PointIndex(pts, radius * 2) : pts;
+}
+
 export interface Estimate {
   value: number;
   /** Distance to the nearest real point, plan px. */
@@ -125,17 +223,22 @@ export interface Estimate {
   nearest: HeatPoint;
 }
 
-/** IDW estimate at (x, y) from points within 2 × radius; null outside the radius. */
-export function estimateAt(pts: HeatPoint[], x: number, y: number, radius: number): Estimate | null {
+/**
+ * IDW estimate at (x, y) from points within 2 × radius; null outside the
+ * radius. An index must have been built for this radius (`indexPoints`).
+ */
+export function estimateAt(src: PointSource, x: number, y: number, radius: number): Estimate | null {
+  const pts = src instanceof PointIndex ? src.candidates(x, y) : src;
   const reach = radius * 2;
   let num = 0;
   let den = 0;
   let nearestPx = Infinity;
   let nearest: HeatPoint | null = null;
-  for (const p of pts) {
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!;
     const dx = p.x - x;
     const dy = p.y - y;
-    if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
+    if (dx > reach || dx < -reach || dy > reach || dy < -reach) continue;
     const d2 = dx * dx + dy * dy;
     const d = Math.sqrt(d2);
     if (d < nearestPx) {
@@ -143,7 +246,8 @@ export function estimateAt(pts: HeatPoint[], x: number, y: number, radius: numbe
       nearest = p;
     }
     if (d2 < 1e-6) return { value: p.v, nearestPx: 0, nearest: p };
-    const w = 1 / Math.pow(d2, IDW_POWER / 2);
+    // Math.pow(d2, 1) is exactly d2; skip the call for the usual power.
+    const w = IDW_POWER === 2 ? 1 / d2 : 1 / Math.pow(d2, IDW_POWER / 2);
     num += w * p.v;
     den += w;
   }
@@ -178,7 +282,7 @@ export interface HeatGrid {
 }
 
 /** Rasterise the heatmap at ~10 cm per cell (scaled plans), capped at MAX_CELLS. */
-export function buildGrid(plan: FloorPlan, ppm: number | null, pts: HeatPoint[], cfg: HeatmapConfig): HeatGrid | null {
+export function buildGrid(plan: FloorPlan, ppm: number | null, pts: readonly HeatPoint[], cfg: HeatmapConfig): HeatGrid | null {
   if (pts.length === 0) return null;
   let cell = ppm ? ppm * 0.1 : Math.max(plan.width, plan.height) / 300;
   cell = Math.max(cell, Math.sqrt((plan.width * plan.height) / MAX_CELLS), 1);
@@ -187,13 +291,14 @@ export function buildGrid(plan: FloorPlan, ppm: number | null, pts: HeatPoint[],
   const radius = influenceRadiusPx(plan, ppm);
   const fade = radius * 0.25;
   const rgba = new Uint8ClampedArray(cols * rows * 4);
+  const src = indexPoints(pts, radius);
   let mapped = 0;
   let passing = 0;
 
   for (let r = 0; r < rows; r++) {
     const y = (r + 0.5) * cell;
     for (let c = 0; c < cols; c++) {
-      const e = estimateAt(pts, (c + 0.5) * cell, y, radius);
+      const e = estimateAt(src, (c + 0.5) * cell, y, radius);
       if (!e) continue;
       mapped++;
       if (passes(e.value, cfg)) passing++;
@@ -265,7 +370,13 @@ export interface ServingEstimate {
   nearestPx: number;
 }
 
-export function servingAt(inputs: ServingAp[], x: number, y: number, radius: number): ServingEstimate | null {
+/** `inputs` may carry indexed points (built for this radius). */
+export function servingAt(
+  inputs: readonly (Omit<ServingAp, "pts"> & { pts: PointSource })[],
+  x: number,
+  y: number,
+  radius: number,
+): ServingEstimate | null {
   let nearestPx = Infinity;
   const ranked: ServingEstimate["ranked"] = [];
   for (const s of inputs) {
@@ -303,12 +414,13 @@ export function buildServingGrid(
   const rgba = new Uint8ClampedArray(cols * rows * 4);
   const counts = new Map<number, number>();
   const noService = rgb(NO_SERVICE_COLOR);
+  const indexed = inputs.map((s) => ({ ...s, pts: indexPoints(s.pts, radius) }));
   let mapped = 0;
   let unserved = 0;
   for (let r = 0; r < rows; r++) {
     const y = (r + 0.5) * cell;
     for (let c = 0; c < cols; c++) {
-      const e = servingAt(inputs, (c + 0.5) * cell, y, radius);
+      const e = servingAt(indexed, (c + 0.5) * cell, y, radius);
       if (!e) continue;
       mapped++;
       const best = e.ranked[0]!;

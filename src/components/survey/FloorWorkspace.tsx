@@ -3,6 +3,8 @@ import { api, asApiError } from "../../api/tauri";
 import { useWifi } from "../../state/WifiContext";
 import type { ApiError, Band } from "../../types/wifi";
 import type { FloorRequirements } from "../../types/requirements";
+import type { Project } from "../../types/project";
+import type { Building } from "../../types/survey";
 import {
   pxPerMetre,
   type Floor,
@@ -19,14 +21,13 @@ import { ApEditor } from "./ApEditor";
 import { NotesPanel } from "./NotesPanel";
 import type { NotePin } from "../../types/notes";
 import { FindingsPanel } from "./FindingsPanel";
+import { ExportDialog } from "./ExportDialog";
 import { PointDetails } from "./PointDetails";
 import { BANDS, HeatmapControls, METRICS, THRESHOLD_MAX, THRESHOLD_MIN } from "./HeatmapControls";
 import { PointRequirements, RequirementsLegend, RequirementsPanel } from "./RequirementsPanel";
 import {
   NOT_HEARD_DBM,
   apColor,
-  buildGrid,
-  buildServingGrid,
   servingAt,
   servingInputs,
   estimateAt,
@@ -40,7 +41,9 @@ import {
   type HeatmapConfig,
   type NetworkFilter,
 } from "../../lib/heatmap";
-import { areaInputs, buildRequirementsGrid, outcomeMark, requirementsAt } from "../../lib/requirements";
+import { areaInputs, outcomeMark, requirementsAt } from "../../lib/requirements";
+import type { HeatJob } from "../../lib/heatmapJobs";
+import { useHeatGrid } from "../../lib/heatmapWorker";
 
 // ---------------------------------------------------------------------------
 // Plan file reading
@@ -162,9 +165,13 @@ const isTyping = (t: EventTarget | null) =>
 
 export function FloorWorkspace({
   floor,
+  project,
+  building,
   onFloorChange,
 }: {
   floor: Floor;
+  project: Project;
+  building: Building;
   /** Updater form, so a result that arrives late (after a scan) applies to the current floor, not a snapshot. */
   onFloorChange: (update: (f: Floor) => Floor) => void;
 }) {
@@ -178,6 +185,7 @@ export function FloorWorkspace({
   const [measuring, setMeasuring] = useState(false);
   const [mismatch, setMismatch] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [scaleA, setScaleA] = useState<PlanXY | null>(null);
   const [scaleB, setScaleB] = useState<PlanXY | null>(null);
   const [lengthText, setLengthText] = useState("");
@@ -394,16 +402,19 @@ export function FloorWorkspace({
     () => (requirements?.profile ? areaInputs(points, requirements.points, requirements.profile) : null),
     [requirements, points],
   );
-  const reqGrid = useMemo(() => (plan && reqInputs ? buildRequirementsGrid(plan, ppm, reqInputs) : null), [plan, ppm, reqInputs]);
+  // Grids are built on a worker; each keeps showing the previous one until the new one is ready.
+  const reqGrid = useHeatGrid(
+    (): HeatJob | null => (plan && reqInputs ? { kind: "requirements", plan, ppm, inputs: reqInputs } : null),
+    [plan, ppm, reqInputs],
+  ).grid;
   const reqEval = (id: number) => requirements?.points.find((e) => e.pointId === id);
-  const heatGrid = useMemo((): HeatGrid | ServingGrid | null => {
-    if (!heatActive || !plan) return null;
-    if (metric === "requirements") return reqGrid;
+  const viewGrid = useHeatGrid((): HeatJob | null => {
+    if (!heatActive || !plan || metric === "requirements") return null;
     return metric === "serving"
-      ? buildServingGrid(plan, ppm, serving, heatCfg.threshold)
-      : buildGrid(plan, ppm, heatPoints, heatCfg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heatActive, plan, ppm, heatPoints, serving, reqGrid, cfgKey]);
+      ? { kind: "serving", plan, ppm, inputs: serving, threshold: heatCfg.threshold }
+      : { kind: "grid", plan, ppm, pts: heatPoints, cfg: heatCfg };
+  }, [heatActive, plan, ppm, heatPoints, serving, cfgKey]).grid;
+  const heatGrid: HeatGrid | ServingGrid | null = !heatActive ? null : metric === "requirements" ? reqGrid : viewGrid;
   const fmtValue = (v: number) =>
     heatCfg.metric === "overlap"
       ? `${Math.round(v)} AP${Math.round(v) === 1 ? "" : "s"}`
@@ -742,6 +753,14 @@ export function FloorWorkspace({
         >
           Findings
         </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setExportOpen(true)}
+          title="Survey report (HTML, prints to PDF) and raw data (CSV, JSON)"
+        >
+          Export…
+        </button>
         {fileButton}
         <div className="workspace-meta">
           {points.length} point{points.length === 1 ? "" : "s"}
@@ -1077,6 +1096,9 @@ export function FloorWorkspace({
           )}
         </aside>
       </div>
+      {exportOpen && (
+        <ExportDialog project={project} building={building} floor={floor} onClose={() => setExportOpen(false)} />
+      )}
     </>
   );
 }

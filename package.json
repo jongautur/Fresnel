@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
+    "test:report": "node scripts/test-report.mjs",
+    "bench:heatmap": "node scripts/bench-heatmap.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -60,6 +60,9 @@ jobs:
       # tsc + vite; also needed before cargo because generate_context! reads dist/.
       - run: npm run build
 
+      # The exported report must stay inert (CSP, no script, data: images only) and escape SSIDs.
+      - run: npm run test:report
+
       - run: cargo fmt --all --check
 
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings

@@ -15,6 +15,7 @@ wifi-tool/
 │       ├── src/
 │       │   ├── lib.rs
 │       │   ├── error.rs          # WifiError: typed, serialisable error kinds
+│       │   ├── settings.rs       # App settings: report branding (settings.json + logo file)
 │       │   ├── adapters/
 │       │   │   ├── mod.rs
 │       │   │   ├── traits.rs     # WifiAdapterProvider trait
@@ -59,6 +60,8 @@ wifi-tool/
 │   │       ├── adapters.rs
 │   │       ├── wifi.rs
 │   │       ├── projects.rs
+│   │       ├── report.rs         # save dialog + atomic write of exports, open in browser
+│   │       ├── settings.rs       # report branding
 │   │       └── survey.rs
 │   └── tauri.conf.json           # + tauri.linux/windows.conf.json: deb/AppImage, NSIS
 ├── src/                          # React + TypeScript (Vite)
@@ -67,7 +70,7 @@ wifi-tool/
 │   ├── components/               # AdapterSelector, WifiTable, ChannelMap, ...
 │   │   └── survey/               # SurveyNav, FloorWorkspace, PlanCanvas, PointDetails
 │   ├── pages/                    # Live, Networks, Survey, Settings
-│   └── lib/format.ts             # signal/band/security formatting
+│   └── lib/                      # format.ts, heatmap.ts (+ worker), requirements.ts, report.ts
 └── docs/ARCHITECTURE.md
 ```
 
@@ -233,6 +236,13 @@ projects ─< buildings ─< floors ─< survey_points ─< survey_samples
   neighbours within 6 m) on a ~10 cm grid, masked beyond 3 m from the nearest
   point. Only dBm is interpolated; never %. Colours: one-hue blue ramp for
   signal, fixed good/critical status colours for coverage pass/fail.
+  Grids are built on a Vite-bundled module worker (`heatmap.worker.ts`, a
+  same-origin file: the CSP has no `blob:`); the latest request wins and the
+  previous grid stays up meanwhile. If the worker can't start, the same code
+  runs on the UI thread. A uniform-grid spatial index (buckets of half the
+  IDW reach) limits each cell to nearby points and keeps their input order,
+  so grids are bit-identical to a full scan (`npm run bench:heatmap` checks
+  this and times both).
 * **Placed APs** (migration v3: `placed_aps`, `placed_ap_bssids`): a position on
   one floor plus the BSSIDs it broadcasts. Names resolve building-wide, and a
   BSSID belongs to at most one AP per building (checked in Rust). Replacing a
@@ -279,6 +289,21 @@ projects ─< buildings ─< floors ─< survey_points ─< survey_samples
   labelled). Ownership is decided project-wide; the scope (floor, building,
   project) only limits the evidence. `Database::findings` is what the
   report will use.
+* **Report export** (`src/lib/report.ts`, `ExportDialog`,
+  `commands/report.rs`): one self-contained HTML file per export (floor,
+  building or project), printed to PDF from the user's browser. It carries
+  its own CSP (`default-src 'none'; img-src data:; style-src
+  'unsafe-inline'`), no script, every image as a data: URI (a plan once per
+  floor, as an SVG `<image>` each map `<use>`s) and all text escaped;
+  `npm run test:report` checks a fixture report for exactly that. Maps use
+  the screen's grid builders, so shares match. Derived findings (areas below
+  target, own channel overlap by centre ± width / 2, neighbours on own
+  channels, 2.4 GHz off 1/6/11, dead zones) each state what they are based
+  on. The bytes go to Rust as a raw IPC body; Rust shows the save dialog,
+  writes atomically and can open only the file it just saved. Raw CSV
+  (formula cells defused, UTF-8 BOM) and JSON come from the same dialog.
+  Branding (technician, company, PNG/JPEG logo ≤ 2 MB; SVG refused) is an
+  app setting: `settings.json` + `branding-logo` in the app data folder.
 * **One adapter per floor**: measuring with a different adapter (ID or hardware
   ID) than earlier points returns `adapter_mismatch`; the UI asks and retries
   with `allowAdapterChange`.

@@ -13,6 +13,9 @@ export default defineConfig({
     watch: { ignored: ["**/src-tauri/**", "**/crates/**", "**/target/**"] },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
+  // Heatmap grids run on a module worker, emitted as its own same-origin
+  // file (the app CSP has no blob: for workers).
+  worker: { format: "es" },
   build: {
     target: "es2022",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,

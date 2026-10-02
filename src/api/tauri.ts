@@ -29,8 +29,9 @@ import type {
   RequirementTarget,
   TargetOptions,
 } from "../types/requirements";
-import type { NotePin, NotePinInput, NoteTarget, Photo, PhotoTarget } from "../types/notes";
+import type { FloorAnnotations, NotePin, NotePinInput, NoteTarget, Photo, PhotoTarget } from "../types/notes";
 import type { BssidMark, FindingScope, Findings, LinkOptions, MarkStatus } from "../types/findings";
+import type { Branding, BrandingInfo } from "../types/settings";
 
 function toApiError(e: unknown): ApiError {
   if (e && typeof e === "object" && "kind" in e && "message" in e) {
@@ -155,6 +156,25 @@ export const api = {
   clearBssidMark: (projectId: number, bssid: string) => call<boolean>("clear_bssid_mark", { projectId, bssid }),
   bssidLinkOptions: (projectId: number, bssid: string) =>
     call<LinkOptions>("bssid_link_options", { projectId, bssid }),
+
+  /** A floor's notes, pins and in-report photos, for the report. */
+  floorAnnotations: (floorId: number) => call<FloorAnnotations>("floor_annotations", { floorId }),
+  /**
+   * Asks where to save (native dialog), then writes `bytes` there atomically.
+   * Returns the path written, or null if the user cancelled. `name` is a
+   * suggested file name without extension.
+   */
+  saveExport: (kind: "html" | "csv" | "json", bytes: Uint8Array, name: string) =>
+    call<string | null>("save_export", bytes, { "x-export-kind": kind, "x-export-name": encodeURIComponent(name) }),
+  /** Opens the last saved export with the system's default app. */
+  openExport: () => call<void>("open_export"),
+
+  getBranding: () => call<BrandingInfo>("get_branding"),
+  setBranding: (branding: Branding) => call<BrandingInfo>("set_branding", { branding }),
+  /** PNG or JPEG bytes; empty when no logo is set. */
+  brandingLogo: () => call<ArrayBuffer>("branding_logo"),
+  setBrandingLogo: (bytes: Uint8Array) => call<BrandingInfo>("set_branding_logo", bytes),
+  clearBrandingLogo: () => call<BrandingInfo>("clear_branding_logo"),
 };
 
 export function isApiError(e: unknown): e is ApiError {

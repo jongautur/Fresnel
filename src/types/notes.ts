@@ -26,6 +26,16 @@ export interface NotePinInput {
   category: string | null;
 }
 
+/** Report-only material; image bytes are fetched separately as report copies. */
+export interface FloorAnnotations {
+  floorId: number;
+  notes: string | null;
+  pointNotes: { id: number; name: string | null; notes: string }[];
+  apNotes: { id: number; name: string | null; notes: string }[];
+  pins: NotePin[];
+  photos: { id: number; target: PhotoTarget; reportFile: string; caption: string | null; takenAt: string | null }[];
+}
+
 /** Suggested pin categories (stored as free text). */
 export const PIN_CATEGORIES: { id: string; label: string }[] = [
   { id: "obstruction", label: "Obstruction" },

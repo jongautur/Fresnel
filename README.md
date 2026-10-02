@@ -68,7 +68,9 @@ Flatpak isn't targeted on purpose: future monitor-mode and USB-probe access conf
 ## CI and releases
 
 Every push and PR runs `.github/workflows/ci.yml` on Ubuntu 22.04 and Windows:
-`npm run build`, `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test`.
+`npm run build`, `npm run test:report` (the exported report stays inert and escapes SSIDs),
+`cargo fmt --check`, `cargo clippy -D warnings` and `cargo test`.
+`npm run bench:heatmap` times the heatmap grids (not in CI).
 The Windows leg is allowed to fail until the Linux-only adapters are gated.
 Toolchain: `rust-toolchain.toml`; the minimum Rust is `rust-version` in `Cargo.toml`.
 

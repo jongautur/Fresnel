@@ -240,6 +240,7 @@ export function Survey() {
 
   const buildingList = buildings?.parentId === sel.projectId ? buildings.list : null;
   const building = buildingList?.find((b) => b.id === sel.buildingId) ?? null;
+  const project = projects?.find((p) => p.id === sel.projectId) ?? null;
   const floorList = building && floors?.parentId === building.id ? floors.list : null;
   const floor = floorList?.find((f) => f.id === sel.floorId) ?? null;
   const nextLevel = floorList?.length ? Math.max(...floorList.map((f) => f.level)) + 1 : 0;
@@ -324,9 +325,14 @@ export function Survey() {
             onCreate={(name) => createFloor(name, String(nextLevel))}
           />
         </section>
-      ) : floor ? (
+      ) : floor && project && building ? (
         <ErrorBoundary key={floor.id} title="The floor view stopped working">
-          <FloorWorkspace floor={floor} onFloorChange={(update) => updateFloor(floor.id, update)} />
+          <FloorWorkspace
+            floor={floor}
+            project={project}
+            building={building}
+            onFloorChange={(update) => updateFloor(floor.id, update)}
+          />
         </ErrorBoundary>
       ) : null}
     </div>
