@@ -1,0 +1,125 @@
+name: Release
+
+# Push a tag vX.Y.Z (matching Cargo.toml and package.json) to build the
+# installers into a DRAFT release. Publish it by hand after the clean-machine
+# checks (plan step 1d).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      - name: Tag matches Cargo.toml and package.json
+        run: scripts/check-version.sh "$GITHUB_REF_NAME"
+
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  linux:
+    needs: [version, check]
+    # 22.04 sets the glibc baseline for the .deb and AppImage.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Install Linux packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev patchelf xdg-utils
+
+      - run: npm ci
+
+      - name: Build .deb and AppImage
+        run: npx tauri build --bundles deb,appimage
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundle-linux
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+  windows:
+    needs: [version, check]
+    runs-on: windows-latest
+    # Can't build until the Linux-only adapters are gated (plan step 1c).
+    # Remove once step 1c lands; the release then waits for the installer.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust (from rust-toolchain.toml)
+        shell: bash
+        run: rustup toolchain install
+
+      - run: npm ci
+
+      # npx, not `npm run tauri -- …`: PowerShell's npm.ps1 shim can drop the `--`.
+      - name: Build NSIS installer
+        run: npx tauri build --bundles nsis
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundle-windows
+          path: target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  release:
+    needs: [linux, windows]
+    # Runs when Windows failed (continue-on-error above), never without Linux.
+    if: ${{ !cancelled() && needs.linux.result == 'success' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bundle-*
+          path: out
+          merge-multiple: true
+
+      - name: SHA256SUMS
+        working-directory: out
+        run: |
+          # upload-artifact keeps the deb/ and appimage/ folders; flatten them.
+          find . -mindepth 2 -type f -exec mv -t . {} +
+          find . -mindepth 1 -type d -empty -delete
+          ls -l
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort | xargs sha256sum > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          name: Fresnel ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: out/*

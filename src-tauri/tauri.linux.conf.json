@@ -1,0 +1,20 @@
+{
+  "bundle": {
+    "targets": [
+      "appimage",
+      "deb"
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "network-manager"
+        ],
+        "section": "net",
+        "desktopTemplate": "fresnel.desktop"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

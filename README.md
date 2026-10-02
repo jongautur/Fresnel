@@ -54,7 +54,30 @@ npm run tauri build                     # AppImage + .deb  → target/release/bu
 npm run tauri build -- --bundles deb    # just the .deb
 ```
 
+Bundle settings per OS live in `src-tauri/tauri.linux.conf.json` and `tauri.windows.conf.json`
+(NSIS, per-user install, offline WebView2).
 Flatpak isn't targeted on purpose: future monitor-mode and USB-probe access conflicts with its sandbox.
+
+## CI and releases
+
+Every push and PR runs `.github/workflows/ci.yml` on Ubuntu 22.04 and Windows:
+`npm run build`, `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test`.
+The Windows leg is allowed to fail until the Linux-only adapters are gated.
+Toolchain: `rust-toolchain.toml`; the minimum Rust is `rust-version` in `Cargo.toml`.
+
+The version lives in `Cargo.toml` (`[workspace.package]`); Tauri takes it from there.
+`package.json` must match, which `scripts/check-version.sh [vX.Y.Z]` checks. To release:
+
+```bash
+# bump Cargo.toml, then:
+npm version --no-git-tag-version 0.3.1 && cargo update --workspace
+scripts/check-version.sh v0.3.1
+git tag v0.3.1 && git push origin v0.3.1
+```
+
+The tag runs `.github/workflows/release.yml`: CI, then `.deb`, AppImage and NSIS installer
+with `SHA256SUMS` in a **draft** release. Publish it after checking the builds on a clean machine.
+v0.3.0 predates the workflows; v0.3.1 is the first CI-built release.
 
 ## Layout
 

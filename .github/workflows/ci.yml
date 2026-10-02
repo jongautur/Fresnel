@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"] # tags are built by release.yml, which calls this workflow
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Windows can't pass yet: wl-nl80211 / netlink-sys don't compile there until
+    # the Linux-only adapters are gated (plan step 1c). Visible, not blocking.
+    # Drop `experimental` once step 1c lands.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            experimental: false
+          - os: windows-latest
+            experimental: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust (from rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc --version
+          cargo clippy --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev patchelf xdg-utils
+
+      - name: Versions agree
+        shell: bash
+        run: scripts/check-version.sh
+
+      - run: npm ci
+
+      # tsc + vite; also needed before cargo because generate_context! reads dist/.
+      - run: npm run build
+
+      - run: cargo fmt --all --check
+
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - run: cargo test --workspace --locked

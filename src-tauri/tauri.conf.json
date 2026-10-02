@@ -1,8 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "fresnel",
+  "productName": "Fresnel",
   "mainBinaryName": "fresnel",
-  "version": "0.3.0",
   "identifier": "io.fresnel.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -27,30 +26,15 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "appimage",
-      "deb"
-    ],
     "category": "Utility",
     "shortDescription": "Wi-Fi analysis and site survey tool",
-    "longDescription": "Native Linux tool for Wi-Fi analysis and site surveys: adapter discovery, BSSID scanning and connection details. Works fully offline.",
+    "longDescription": "Wi-Fi analysis and site survey tool for Linux and Windows: adapter discovery, BSSID scanning and connection details. Works fully offline.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.png"
-    ],
-    "linux": {
-      "deb": {
-        "depends": [
-          "network-manager"
-        ],
-        "section": "net",
-        "desktopTemplate": "fresnel.desktop"
-      },
-      "appimage": {
-        "bundleMediaFramework": false
-      }
-    }
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
   }
 }

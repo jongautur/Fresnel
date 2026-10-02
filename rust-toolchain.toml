@@ -1,0 +1,6 @@
+# Toolchain for local builds and CI. The minimum supported version is
+# `rust-version` in Cargo.toml (set by the locked dependencies).
+[toolchain]
+channel = "1.99"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

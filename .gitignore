@@ -6,3 +6,9 @@ src-tauri/gen/schemas/
 *.db-wal
 *.db-shm
 *.tsbuildinfo
+
+# Local planning notes
+plan.md
+
+# Agent worktrees
+.claude/worktrees/
