@@ -47,8 +47,19 @@ async function call<T>(
   }
 }
 
+/** An uncaught frontend error for the backend log (fields are length-capped there). */
+export type FrontendErrorReport = {
+  message: string;
+  stack?: string;
+  /** Where it was caught, e.g. "window.error app.js:12:3" or "unhandledrejection". */
+  source: string;
+};
+
 export const api = {
   appInfo: () => call<AppInfo>("app_info"),
+  /** Plain-text report for bug reports: versions, OS, adapters, DB state, recent log lines. */
+  diagnosticsReport: () => call<string>("diagnostics_report"),
+  logFrontendError: (report: FrontendErrorReport) => call<void>("log_frontend_error", report),
 
   listAdapters: () => call<AdapterListing>("list_adapters"),
   getAdapter: (adapterId: AdapterId) => call<Adapter>("get_adapter", { adapterId }),

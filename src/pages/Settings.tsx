@@ -15,6 +15,17 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   const { signalUnit, setSignalUnit } = usePreferences();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
+
+  const copyDiagnostics = async () => {
+    try {
+      await navigator.clipboard.writeText(await api.diagnosticsReport());
+      setCopied("copied");
+    } catch (e) {
+      setCopied("failed");
+      setError(asApiError(e));
+    }
+  };
 
   useEffect(() => {
     api.appInfo().then(setInfo, (e) => setError(asApiError(e)));
@@ -77,8 +88,21 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
             <KV k="Database" mono>{info.databasePath}</KV>
             <KV k="Schema version" mono>{info.schemaVersion}</KV>
             {info.databaseError && <KV k="Database error">{info.databaseError}</KV>}
+            {info.databaseNotice && <KV k="Database notice">{info.databaseNotice}</KV>}
           </KeyValueGrid>
         )}
+        <div className="pad panel-actions">
+          <button type="button" className="btn" onClick={() => void copyDiagnostics()}>
+            Copy diagnostics
+          </button>
+          <span className="muted small">
+            {copied === "copied"
+              ? "Copied. Paste it into your bug report."
+              : copied === "failed"
+                ? "Could not copy the report."
+                : "Versions, adapters, database state and recent log lines, for bug reports."}
+          </span>
+        </div>
       </section>
     </div>
   );

@@ -7,6 +7,8 @@ import { Survey } from "./pages/Survey";
 import { Settings, type Theme } from "./pages/Settings";
 import { IconLive, IconNetworks, IconSettings, IconSurvey } from "./components/Icons";
 import { StatusDot } from "./components/StatusDot";
+import { ErrorBanner } from "./components/ErrorBanner";
+import { api } from "./api/tauri";
 
 type Page = "live" | "networks" | "survey" | "settings";
 
@@ -43,6 +45,16 @@ function SidebarFooter() {
 export default function App() {
   const [page, setPage] = useState<Page>("live");
   const [theme, setThemeState] = useState<Theme>(loadTheme);
+  // E.g. a damaged database was set aside at startup: say so before the user
+  // wonders where their projects went.
+  const [dbNotice, setDbNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.appInfo().then(
+      (info) => setDbNotice(info.databaseNotice),
+      () => {},
+    );
+  }, []);
 
   useEffect(() => {
     if (theme === "system") delete document.documentElement.dataset.theme;
@@ -77,6 +89,11 @@ export default function App() {
           <SidebarFooter />
         </nav>
         <main className="content">
+          {dbNotice && (
+            <div className="pad">
+              <ErrorBanner error={{ kind: "database", message: dbNotice }} />
+            </div>
+          )}
           {page === "live" && <Live />}
           {page === "networks" && <Networks />}
           {page === "survey" && <Survey />}

@@ -1,25 +1,18 @@
 mod commands;
+mod env_fix;
+mod logging;
 mod state;
 
 use tauri::Manager;
-use tracing_subscriber::EnvFilter;
 
 use crate::state::AppState;
-
-fn init_logging() {
-    // Override with e.g. RUST_LOG=fresnel_core=debug
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,fresnel_core=info,fresnel_lib=info,zbus=warn"));
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .try_init();
-}
 
 macro_rules! app_commands {
     () => {
         tauri::generate_handler![
             commands::app::app_info,
+            commands::diagnostics::diagnostics_report,
+            commands::diagnostics::log_frontend_error,
             commands::adapters::list_adapters,
             commands::adapters::get_adapter,
             commands::wifi::scan,
@@ -48,13 +41,38 @@ macro_rules! app_commands {
     };
 }
 
+/// Fix up the process environment (see `env_fix`). Call first thing in
+/// `main()`, before any other thread exists.
+pub fn prepare_environment() {
+    env_fix::apply();
+}
+
 pub fn run() {
-    init_logging();
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Fresnel");
+    logging::init();
+    logging::install_panic_hook();
 
     let result = tauri::Builder::default()
+        // Must be the first plugin. A second instance would defeat the
+        // per-adapter scan lock and spacing and race on plan files, so it
+        // hands over to the running one and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tracing::info!("another launch; focusing the existing window");
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+            logging::attach_file(app.path().app_log_dir().map_err(|e| e.to_string()));
+            tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Fresnel");
+            for change in env_fix::changes() {
+                tracing::info!("environment: {change}");
+            }
+            // Local, not Roaming, on Windows: SQLite with WAL and large plan
+            // images don't belong in a profile that is synced at logon and
+            // logoff. Linux and macOS resolve both to the same directory.
+            let data_dir = app.path().app_local_data_dir()?;
             app.manage(AppState::new(data_dir));
             Ok(())
         })

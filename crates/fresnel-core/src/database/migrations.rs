@@ -6,7 +6,16 @@
 use rusqlite_migration::{Migrations, M};
 
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![
+    Migrations::new(all())
+}
+
+/// The schema version of a fully migrated database.
+pub fn latest_version() -> u32 {
+    all().len() as u32
+}
+
+fn all() -> Vec<M<'static>> {
+    vec![
         // v1 — projects (survey projects; buildings/floors/samples come later)
         M::up(
             "CREATE TABLE projects (
@@ -117,7 +126,7 @@ pub fn migrations() -> Migrations<'static> {
             ) STRICT, WITHOUT ROWID;
             CREATE INDEX idx_placed_ap_bssids_bssid ON placed_ap_bssids(bssid);",
         ),
-    ])
+    ]
 }
 
 #[cfg(test)]
