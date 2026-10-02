@@ -16,7 +16,7 @@ import { IconRadar } from "../Icons";
 import { PlanCanvas, type ApMarker, type CanvasMode, type PlanXY } from "./PlanCanvas";
 import { ApEditor } from "./ApEditor";
 import { PointDetails } from "./PointDetails";
-import { HeatmapControls } from "./HeatmapControls";
+import { BANDS, HeatmapControls, METRICS, THRESHOLD_MAX, THRESHOLD_MIN } from "./HeatmapControls";
 import {
   NOT_HEARD_DBM,
   apColor,
@@ -42,6 +42,11 @@ import {
 
 /** Below this, SVG coordinate spaces are scaled up so the plan stays sharp when zoomed. */
 const SVG_MIN_SIDE = 2000;
+/** The backend's import limit. */
+const MAX_PLAN_BYTES = 64 * 1024 * 1024;
+/** Beyond these the webview can run out of memory drawing and zooming the plan. */
+const MAX_PLAN_SIDE = 16384;
+const MAX_PLAN_PIXELS = 100_000_000;
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -65,6 +70,11 @@ function svgViewBox(text: string): [number, number] | null {
  * rotation, SVG sizing). That rendered size becomes the survey coordinate space.
  */
 async function readPlanFile(file: File): Promise<{ bytes: Uint8Array; width: number; height: number }> {
+  if (file.size > MAX_PLAN_BYTES) {
+    throw new Error(
+      `The plan file is ${Math.round(file.size / (1024 * 1024))} MB; the limit is ${MAX_PLAN_BYTES / (1024 * 1024)} MB. Export it at a lower resolution or as JPEG.`,
+    );
+  }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const isSvg = file.type === "image/svg+xml" || /\.svg$/i.test(file.name);
   const url = URL.createObjectURL(new Blob([bytes], { type: isSvg ? "image/svg+xml" : file.type }));
@@ -80,9 +90,18 @@ async function readPlanFile(file: File): Promise<{ bytes: Uint8Array; width: num
       if (viewBox && long > 0 && long < SVG_MIN_SIDE) {
         w *= SVG_MIN_SIDE / long;
         h *= SVG_MIN_SIDE / long;
+      } else if (viewBox && w > 0 && h > 0) {
+        const f = Math.min(1, MAX_PLAN_SIDE / long, Math.sqrt(MAX_PLAN_PIXELS / (w * h)));
+        w *= f;
+        h *= f;
       }
     }
     if (!w || !h) throw new Error("Could not determine the image size (an SVG needs width/height or a viewBox).");
+    if (Math.round(w) > MAX_PLAN_SIDE || Math.round(h) > MAX_PLAN_SIDE || w * h > MAX_PLAN_PIXELS) {
+      throw new Error(
+        `The plan is ${Math.round(w)} × ${Math.round(h)} px (${Math.round((w * h) / 1e6)} MP). Plans can be at most ${MAX_PLAN_SIDE} px on a side and ${MAX_PLAN_PIXELS / 1e6} MP. Scale it down in an image editor and import it again.`,
+      );
+    }
     return { bytes, width: Math.round(w), height: Math.round(h) };
   } finally {
     URL.revokeObjectURL(url);
@@ -104,13 +123,28 @@ interface HeatPrefs {
   overlap: number;
 }
 
+/** Stored prefs are checked field by field; anything unknown falls back to the default. */
 function loadHeatPrefs(): HeatPrefs {
   const d: HeatPrefs = { on: false, metric: "signal", band: "all", coverage: -67, overlap: -75 };
+  let s: Record<string, unknown>;
   try {
-    return { ...d, ...(JSON.parse(localStorage.getItem(HEAT_KEY) ?? "{}") as Partial<HeatPrefs>) };
+    const parsed: unknown = JSON.parse(localStorage.getItem(HEAT_KEY) ?? "{}");
+    if (!parsed || typeof parsed !== "object") return d;
+    s = parsed as Record<string, unknown>;
   } catch {
     return d;
   }
+  const threshold = (v: unknown, fallback: number) =>
+    typeof v === "number" && Number.isFinite(v)
+      ? Math.min(THRESHOLD_MAX, Math.max(THRESHOLD_MIN, Math.round(v)))
+      : fallback;
+  return {
+    on: typeof s.on === "boolean" ? s.on : d.on,
+    metric: METRICS.find((m) => m.id === s.metric)?.id ?? d.metric,
+    band: BANDS.find((b) => b === s.band) ?? d.band,
+    coverage: threshold(s.coverage, d.coverage),
+    overlap: threshold(s.overlap, d.overlap),
+  };
 }
 
 const isTyping = (t: EventTarget | null) =>
@@ -120,8 +154,15 @@ const isTyping = (t: EventTarget | null) =>
 // Workspace
 // ---------------------------------------------------------------------------
 
-export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloorChange: (f: Floor) => void }) {
-  const { selectedAdapter } = useWifi();
+export function FloorWorkspace({
+  floor,
+  onFloorChange,
+}: {
+  floor: Floor;
+  /** Updater form, so a result that arrives late (after a scan) applies to the current floor, not a snapshot. */
+  onFloorChange: (update: (f: Floor) => Floor) => void;
+}) {
+  const { selectedAdapter, holdAutoScan } = useWifi();
   const [points, setPoints] = useState<SurveyPoint[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -342,6 +383,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
     setMeasuring(true);
     setError(null);
     setMismatch(null);
+    const releaseAutoScan = holdAutoScan();
     try {
       const point = await api.measureHere({
         floorId: floor.id,
@@ -353,12 +395,13 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
       setPoints((ps) => [...ps, point]);
       setSelectedId(point.id);
       setPending(null);
-      onFloorChange({ ...floor, pointCount: points.length + 1 });
+      onFloorChange((f) => ({ ...f, pointCount: f.pointCount + 1 }));
     } catch (e) {
       const err = asApiError(e);
       if (err.kind === "adapter_mismatch") setMismatch(err.message);
       else setError(err);
     } finally {
+      releaseAutoScan();
       setMeasuring(false);
     }
   };
@@ -368,7 +411,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
       await api.deleteSurveyPoint(id);
       setPoints((ps) => ps.filter((p) => p.id !== id));
       setSelectedId(null);
-      onFloorChange({ ...floor, pointCount: Math.max(0, points.length - 1) });
+      onFloorChange((f) => ({ ...f, pointCount: Math.max(0, f.pointCount - 1) }));
     } catch (e) {
       setError(asApiError(e));
     }
@@ -385,7 +428,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
       const updated = await api.importFloorPlan(floor.id, bytes, width, height);
       setPending(null);
       setMode("measure");
-      onFloorChange(updated);
+      onFloorChange(() => updated);
     } catch (err) {
       setError(err instanceof Error ? { kind: "invalid_input", message: err.message } : asApiError(err));
     } finally {
@@ -407,7 +450,8 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
     if (!scaleA || !scaleB || lengthM == null) return;
     const scale: FloorScale = { x1: scaleA.x, y1: scaleA.y, x2: scaleB.x, y2: scaleB.y, lengthM };
     try {
-      onFloorChange(await api.setFloorScale(floor.id, scale));
+      const updated = await api.setFloorScale(floor.id, scale);
+      onFloorChange(() => updated);
       setMode("measure");
       setError(null);
     } catch (e) {
@@ -417,7 +461,8 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
 
   const clearScale = async () => {
     try {
-      onFloorChange(await api.setFloorScale(floor.id, null));
+      const updated = await api.setFloorScale(floor.id, null);
+      onFloorChange(() => updated);
       setScaleA(null);
       setScaleB(null);
       setLengthText("");
@@ -452,7 +497,8 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
     if (mode === "scale" && scaleB) lengthInput.current?.focus();
   }, [mode, scaleB]);
 
-  // Enter = measure, Escape = cancel (unless typing in a field)
+  // Enter = measure, Escape = cancel (unless typing in a field). A running
+  // measurement can't be cancelled, so Escape does nothing until it is saved.
   const measureRef = useRef(measure);
   measureRef.current = measure;
   useEffect(() => {
@@ -461,7 +507,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
       if (e.key === "Enter" && mode === "measure") {
         e.preventDefault();
         void measureRef.current();
-      } else if (e.key === "Escape") {
+      } else if (e.key === "Escape" && !measuring) {
         setPendingAp(null);
         setSelectedApId(null);
         setPending(null);
@@ -471,7 +517,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode]);
+  }, [mode, measuring]);
 
   // --- Render --------------------------------------------------------------
 
@@ -488,7 +534,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
         type="button"
         className={plan ? "btn" : "btn btn-primary"}
         onClick={() => fileInput.current?.click()}
-        disabled={importing || (plan != null && (floor.pointCount > 0 || floorAps.length > 0))}
+        disabled={importing || measuring || (plan != null && (floor.pointCount > 0 || floorAps.length > 0))}
         title={
           plan && (floor.pointCount > 0 || floorAps.length > 0)
             ? "Points or access points are placed on the current plan. Delete them or create a new floor to use another plan."
@@ -529,11 +575,17 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
     <>
       <div className="workspace-toolbar">
         <AdapterSelector />
-        <div className="segmented" role="tablist" aria-label="Tool">
+        <div
+          className="segmented"
+          role="tablist"
+          aria-label="Tool"
+          title={measuring ? "Wait for the measurement to finish" : undefined}
+        >
           <button
             type="button"
             role="tab"
             aria-selected={mode === "measure"}
+            disabled={measuring}
             className={mode === "measure" ? "active" : ""}
             onClick={() => setMode("measure")}
           >
@@ -543,6 +595,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
             type="button"
             role="tab"
             aria-selected={mode === "aps"}
+            disabled={measuring}
             className={mode === "aps" ? "active" : ""}
             onClick={() => {
               setMode("aps");
@@ -556,6 +609,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
             type="button"
             role="tab"
             aria-selected={mode === "scale"}
+            disabled={measuring}
             className={mode === "scale" ? "active" : ""}
             onClick={enterScaleMode}
           >
@@ -609,6 +663,7 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
           hoverInfo={heatActive ? hoverInfo : undefined}
           onPlanClick={onPlanClick}
           onPointClick={(id) => {
+            if (measuring) return;
             setSelectedId(id);
             setPending(null);
             setMismatch(null);
@@ -798,7 +853,10 @@ export function FloorWorkspace({ floor, onFloorChange }: { floor: Floor; onFloor
                     )}
                     <p className="muted small">
                       Stand still while it scans: usually 3–5 s, longer right after another scan. Only networks heard
-                      during this scan are saved. Enter measures, Esc cancels.
+                      during this scan are saved.{" "}
+                      {measuring
+                        ? "A running scan can't be cancelled; the point is saved when it finishes."
+                        : "Enter measures, Esc cancels."}
                     </p>
                   </div>
                 </section>

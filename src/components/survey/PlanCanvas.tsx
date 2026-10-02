@@ -35,6 +35,18 @@ const AP_HALF = 11;
 const HIT_PX = 12;
 const DRAG_PX = 4;
 const MAX_ZOOM = 8;
+/** Wheel deltas given in lines or pages, converted to pixels. */
+const WHEEL_LINE_PX = 40;
+
+/**
+ * Client coordinates → coordinates inside the canvas's padding box, which is
+ * what the absolutely positioned plan and overlay are laid out in (the
+ * bounding rect includes the 1 px border).
+ */
+function toLocal(el: HTMLElement, clientX: number, clientY: number) {
+  const r = el.getBoundingClientRect();
+  return { sx: clientX - r.left - el.clientLeft, sy: clientY - r.top - el.clientTop };
+}
 
 /** Nice scale-bar length (m) that renders between ~60 and ~150 px. */
 function scaleBarMetres(pxPerScreenMetre: number): number | null {
@@ -167,8 +179,14 @@ export function PlanCanvas({
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const r = el.getBoundingClientRect();
-      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+      const { sx, sy } = toLocal(el, e.clientX, e.clientY);
+      const dy =
+        e.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? e.deltaY * WHEEL_LINE_PX
+          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? e.deltaY * el.clientHeight
+            : e.deltaY;
+      zoomAt(sx, sy, Math.exp(-dy * 0.0015));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -182,10 +200,7 @@ export function PlanCanvas({
   const toPlan = (sx: number, sy: number): PlanXY => ({ x: (sx - view.tx) / view.k, y: (sy - view.ty) / view.k });
   const onPlan = (p: PlanXY) => p.x >= 0 && p.y >= 0 && p.x <= plan.width && p.y <= plan.height;
 
-  const local = (e: PointerEvent) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return { sx: e.clientX - r.left, sy: e.clientY - r.top };
-  };
+  const local = (e: PointerEvent<HTMLDivElement>) => toLocal(e.currentTarget, e.clientX, e.clientY);
 
   const pointAt = (sx: number, sy: number): number | null => {
     let best: number | null = null;
@@ -267,6 +282,14 @@ export function PlanCanvas({
     if (onPlan(p)) onPlanClick(p);
   };
 
+  // The gesture was taken away (touch cancelled, capture lost): drop it without clicking or moving anything.
+  const cancelDrag = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    setPanning(false);
+    setApDrag(null);
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = 60;
     const pan = (dx: number, dy: number) => {
@@ -317,6 +340,8 @@ export function PlanCanvas({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={cancelDrag}
+      onLostPointerCapture={cancelDrag}
       onPointerLeave={() => {
         setHover(null);
         setHoverPoint(null);

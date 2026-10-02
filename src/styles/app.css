@@ -36,7 +36,7 @@
   --plan-scale: #c2255c;
   --radius: 6px;
   --font-ui: "Inter", "Cantarell", "Ubuntu", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", "Ubuntu Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "Fira Code", "Ubuntu Mono", "DejaVu Sans Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
   color-scheme: dark;
 }
 
@@ -233,7 +233,8 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer;
 }
 .segmented button:last-child { border-right: 0; }
-.segmented button:hover { background: var(--bg-hover); }
+.segmented button:hover:not(:disabled) { background: var(--bg-hover); }
+.segmented button:disabled { opacity: 0.55; cursor: default; }
 .segmented button.active { background: var(--accent-soft); color: var(--accent); }
 .seg-count {
   display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px;
@@ -289,6 +290,7 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .banner-message { color: var(--text); user-select: text; }
 .banner-hint { color: var(--muted); margin-top: 2px; }
 .banner-compact { padding: 8px 10px; }
+.banner .panel-actions { margin-top: 10px; }
 
 /* ---- Signal ------------------------------------------------------------ */
 .signal { display: inline-flex; align-items: center; gap: 8px; }

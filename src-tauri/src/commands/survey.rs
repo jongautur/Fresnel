@@ -13,12 +13,13 @@ use crate::state::AppState;
 /// Best effort: a failure only leaves an orphaned file for the next run.
 pub(crate) async fn collect_plan_garbage(state: &AppState) {
     let plans = state.plans.clone();
-    let _ = with_db(state, move |db| {
-        let referenced = db.referenced_plan_files()?;
-        plans.collect_garbage(&referenced);
-        Ok(())
+    if let Err(e) = with_db(state, move |db| {
+        plans.collect_garbage(|| db.referenced_plan_files())
     })
-    .await;
+    .await
+    {
+        tracing::warn!(error = %e, "skipping floor plan clean-up");
+    }
 }
 
 // --- Buildings ------------------------------------------------------------
@@ -102,19 +103,9 @@ pub async fn import_floor_plan(
 
     let plans = state.plans.clone();
     with_db(&state, move |db| {
-        let plan = plans.save(&bytes, width, height)?;
-        match db.set_floor_plan(floor_id, &plan) {
-            Ok((floor, previous)) => {
-                if let Some(old) = previous {
-                    plans.remove(&old);
-                }
-                Ok(floor)
-            }
-            Err(e) => {
-                plans.remove(&plan.file);
-                Err(e)
-            }
-        }
+        plans.import(&bytes, width, height, |plan| {
+            db.set_floor_plan(floor_id, plan)
+        })
     })
     .await
 }

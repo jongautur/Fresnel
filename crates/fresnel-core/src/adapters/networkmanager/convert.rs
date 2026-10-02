@@ -251,6 +251,14 @@ pub fn map_zbus_error(err: zbus::Error, context: &str) -> WifiError {
             classify_dbus_error(name.as_str(), msg.as_deref().unwrap_or(""), context)
         }
         zbus::Error::FDO(fdo) => map_fdo_error(*fdo, context),
+        // The connection's method timeout fired.
+        zbus::Error::InputOutput(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+            WifiError::Timeout(format!(
+                "{context}: no reply on the system D-Bus within {} s \
+                 (NetworkManager or polkit may be stuck)",
+                super::DBUS_METHOD_TIMEOUT.as_secs()
+            ))
+        }
         zbus::Error::InputOutput(e) => {
             WifiError::ServiceUnavailable(format!("Cannot reach the system D-Bus: {e}"))
         }
@@ -276,6 +284,18 @@ pub fn map_fdo_error(err: zbus::fdo::Error, context: &str) -> WifiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn method_timeout_is_a_timeout() {
+        let io = std::io::Error::from(std::io::ErrorKind::TimedOut);
+        let e = map_zbus_error(zbus::Error::from(io), "GetDevices");
+        assert_eq!(e.kind(), "timeout");
+        assert!(e.to_string().contains("GetDevices"));
+
+        let io = std::io::Error::from(std::io::ErrorKind::BrokenPipe);
+        let e = map_zbus_error(zbus::Error::from(io), "GetDevices");
+        assert_eq!(e.kind(), "service_unavailable");
+    }
 
     #[test]
     fn wpa2_psk_ccmp() {

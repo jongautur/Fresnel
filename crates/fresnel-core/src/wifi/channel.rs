@@ -48,14 +48,15 @@ pub fn channel_for_frequency(mhz: u32) -> Option<u16> {
 /// is determined by the primary channel and the width alone. On 2.4 GHz a 40
 /// MHz channel can extend up or down (HT40+/−), which only the AP's HT
 /// Operation element says (`ht_secondary_offset`). Returns `None` when the
-/// centre can't be determined (e.g. 2.4 GHz 40 MHz without the IE, 320 MHz,
-/// whose two overlapping channelisations need the EHT Operation element).
+/// centre can't be determined: unknown width (never assumed to be 20 MHz),
+/// 2.4 GHz 40 MHz without the IE, or 320 MHz, whose two overlapping
+/// channelisations need the EHT Operation element.
 pub fn channel_center_mhz(
     primary_mhz: u32,
     width_mhz: Option<u32>,
     ht_secondary_offset: Option<i8>,
 ) -> Option<u32> {
-    let width = width_mhz.unwrap_or(20);
+    let width = width_mhz?;
     if width <= 20 {
         return Some(primary_mhz);
     }
@@ -91,7 +92,9 @@ mod tests {
     fn centers() {
         // 20 MHz: primary.
         assert_eq!(channel_center_mhz(2412, Some(20), None), Some(2412));
-        assert_eq!(channel_center_mhz(5180, None, None), Some(5180));
+        // Unknown width: unknown centre, not a guessed 20 MHz.
+        assert_eq!(channel_center_mhz(5180, None, None), None);
+        assert_eq!(channel_center_mhz(2412, None, Some(1)), None);
         // 2.4 GHz HT40 needs the offset.
         assert_eq!(channel_center_mhz(2412, Some(40), Some(1)), Some(2422));
         assert_eq!(channel_center_mhz(2462, Some(40), Some(-1)), Some(2452));

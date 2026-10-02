@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useWifi } from "../state/WifiContext";
+import { useAutoScanViewer, useWifi } from "../state/WifiContext";
 import { AdapterSelector } from "../components/AdapterSelector";
 import { AdapterInfo } from "../components/AdapterInfo";
 import { ConnectionInfo } from "../components/ConnectionInfo";
@@ -25,6 +25,7 @@ export function Live() {
     setAutoScan,
     autoScanSeconds,
   } = useWifi();
+  useAutoScanViewer();
 
   const noAdapters = listing && listing.adapters.length === 0 && listing.issues.length === 0;
 
@@ -42,7 +43,7 @@ export function Live() {
             <IconRadar className={scanning ? "spin" : ""} />
             {scanning ? "Scanning…" : "Scan"}
           </button>
-          <label className="checkbox" title="Repeat scans automatically (interval in Settings)">
+          <label className="checkbox" title="Repeat scans automatically while this page is open (interval in Settings)">
             <input type="checkbox" checked={autoScan} onChange={(e) => setAutoScan(e.target.checked)} />
             Auto every {autoScanSeconds}s
           </label>

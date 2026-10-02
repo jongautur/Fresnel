@@ -1,5 +1,7 @@
 //! "Measure Here": run a fresh scan and store what was heard at a position.
 
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -229,14 +231,70 @@ fn fresh_samples(scan: &ScanResult, window_ms: i64) -> Result<Vec<Sample>> {
         ));
     }
     let limit = window_ms.max(0) + FRESH_MARGIN_MS;
-    Ok(aps
-        .iter()
-        .filter(|ap| {
-            ap.last_seen_age_ms
-                .is_some_and(|age| i64::try_from(age).unwrap_or(i64::MAX) <= limit)
-        })
-        .map(Sample::from)
-        .collect())
+    Ok(one_per_bssid(
+        aps.iter()
+            .filter(|ap| {
+                ap.last_seen_age_ms
+                    .is_some_and(|age| i64::try_from(age).unwrap_or(i64::MAX) <= limit)
+            })
+            .map(Sample::from),
+    ))
+}
+
+/// A point stores one sample per BSSID, but a scan can list a BSSID twice:
+/// a hidden network seen via its beacon (no SSID) and a probe response (real
+/// SSID), or one BSSID heard on two channels. Keep the most informative
+/// reading deliberately (see [`better_reading`]) and log the rest; order of
+/// first appearance is kept.
+fn one_per_bssid(samples: impl IntoIterator<Item = Sample>) -> Vec<Sample> {
+    let mut kept: Vec<Sample> = Vec::new();
+    let mut index: HashMap<String, usize> = HashMap::new();
+    for sample in samples {
+        let Some(&i) = index.get(&sample.bssid) else {
+            index.insert(sample.bssid.clone(), kept.len());
+            kept.push(sample);
+            continue;
+        };
+        let dropped = if better_reading(&sample, &kept[i]) == Ordering::Greater {
+            std::mem::replace(&mut kept[i], sample)
+        } else {
+            sample
+        };
+        let winner = &kept[i];
+        if dropped.frequency_mhz != winner.frequency_mhz {
+            // TODO(plan 2c): a BSSID on two frequencies in one scan is a
+            // rogue-detection finding, not just a log line.
+            warn!(
+                bssid = %winner.bssid,
+                kept_mhz = winner.frequency_mhz,
+                dropped_mhz = dropped.frequency_mhz,
+                "BSSID heard on two frequencies in one scan; keeping one reading"
+            );
+        } else {
+            info!(
+                bssid = %winner.bssid,
+                kept_ssid = ?winner.ssid,
+                dropped_ssid = ?dropped.ssid,
+                "BSSID listed twice in one scan; keeping one reading"
+            );
+        }
+    }
+    kept
+}
+
+/// Which of two readings of one BSSID to keep: a known SSID over a hidden
+/// one, then the more recently heard, then the stronger (dBm, else %).
+/// Unknown values rank below known ones.
+fn better_reading(a: &Sample, b: &Sample) -> Ordering {
+    let named = |s: &Sample| s.ssid.as_deref().is_some_and(|n| !n.is_empty());
+    // Smaller age = fresher; `Reverse` so unknown (None) ranks lowest.
+    let fresh = |s: &Sample| s.last_seen_age_ms.map(std::cmp::Reverse);
+    let dbm = |s: &Sample| s.signal.dbm.unwrap_or(f32::NEG_INFINITY);
+    named(a)
+        .cmp(&named(b))
+        .then_with(|| fresh(a).cmp(&fresh(b)))
+        .then_with(|| dbm(a).total_cmp(&dbm(b)))
+        .then_with(|| a.signal.quality_percent.cmp(&b.signal.quality_percent))
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
@@ -358,6 +416,77 @@ mod tests {
         // A %-only adapter is consistent, not incomplete.
         let s = scan(vec![no_dbm]);
         assert!(!looks_incomplete(&s, &fresh_samples(&s, 1800).unwrap()));
+    }
+
+    #[test]
+    fn keeps_one_reading_per_bssid() {
+        // Hidden network: beacon without SSID (fresher, stronger) and probe
+        // response with the real SSID. The named reading wins.
+        let mut beacon = ap("H", Some(100));
+        beacon.ssid = None;
+        beacon.ssid_raw = vec![];
+        beacon.hidden = true;
+        beacon.signal = Signal::from_dbm(-50.0);
+        let mut probe = ap("H", Some(900));
+        probe.ssid = Some("Corp".into());
+        probe.signal = Signal::from_dbm(-55.0);
+        // One BSSID on two channels: the fresher wins over the stronger.
+        let mut old_ch = ap("T", Some(1500));
+        old_ch.signal = Signal::from_dbm(-40.0);
+        let mut new_ch = ap("T", Some(200));
+        new_ch.frequency_mhz = 2437;
+        new_ch.channel = Some(6);
+        new_ch.signal = Signal::from_dbm(-70.0);
+        // Same age: the stronger wins.
+        let mut weak = ap("S", Some(300));
+        weak.signal = Signal::from_dbm(-80.0);
+        let mut strong = ap("S", Some(300));
+        strong.signal = Signal::from_dbm(-60.0);
+
+        let s = scan(vec![
+            beacon,
+            ap("A", Some(100)),
+            old_ch,
+            probe,
+            weak,
+            new_ch,
+            strong,
+        ]);
+        let kept = fresh_samples(&s, 3000).unwrap();
+        let summary: Vec<_> = kept
+            .iter()
+            .map(|s| {
+                (
+                    s.bssid.as_str(),
+                    s.ssid.as_deref(),
+                    s.frequency_mhz,
+                    s.signal.dbm,
+                )
+            })
+            .collect();
+        // First-appearance order.
+        assert_eq!(
+            summary,
+            [
+                ("H", Some("Corp"), 2412, Some(-55.0)),
+                ("A", Some("x"), 2412, Some(-60.0)),
+                ("T", Some("x"), 2437, Some(-70.0)),
+                ("S", Some("x"), 2412, Some(-60.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_values_rank_below_known_ones() {
+        let mut no_age = Sample::from(&ap("X", None));
+        let aged = Sample::from(&ap("X", Some(5000)));
+        assert_eq!(better_reading(&aged, &no_age), Ordering::Greater);
+        no_age.last_seen_age_ms = Some(5000);
+        no_age.signal = Signal::from_quality(90);
+        assert_eq!(better_reading(&aged, &no_age), Ordering::Greater);
+        let mut empty_name = aged.clone();
+        empty_name.ssid = Some(String::new());
+        assert_eq!(better_reading(&empty_name, &aged), Ordering::Less);
     }
 
     #[test]

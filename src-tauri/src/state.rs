@@ -21,12 +21,11 @@ impl AppState {
         let db = Database::open(&db_path).map(Arc::new);
         let plans = Arc::new(PlanStore::new(data_dir.join("floorplans")));
         match &db {
-            Ok(db) => match db.referenced_plan_files() {
-                Ok(referenced) => {
-                    plans.collect_garbage(&referenced);
+            Ok(db) => {
+                if let Err(e) = plans.collect_garbage(|| db.referenced_plan_files()) {
+                    tracing::warn!(error = %e, "skipping floor plan clean-up");
                 }
-                Err(e) => tracing::warn!(error = %e, "skipping floor plan clean-up"),
-            },
+            }
             Err(e) => {
                 tracing::error!(path = %db_path.display(), error = %e, "database unavailable")
             }

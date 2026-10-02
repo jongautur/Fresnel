@@ -12,6 +12,8 @@
 mod ies;
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::time::Duration;
 
 use futures::TryStreamExt;
 use tokio::sync::Mutex;
@@ -24,6 +26,12 @@ use wl_nl80211::{
 pub use self::ies::ElementSummary;
 use crate::error::{Result, WifiError};
 use crate::wifi::models::{Band, LinkRate};
+
+/// Upper bound for one request (the whole dump, all its messages). The kernel
+/// answers these from memory in milliseconds; a request that takes longer is
+/// stuck (e.g. a driver wedged after a firmware crash), and its data is only
+/// enrichment, so callers carry on without it.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Hardware capabilities of the wiphy behind an interface.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -108,7 +116,16 @@ impl Nl80211 {
         *self.handle.lock().await = None;
     }
 
-    async fn on_err<T>(&self, r: Result<T>) -> Result<T> {
+    /// Run one request under [`REQUEST_TIMEOUT`]. Any failure, a timeout
+    /// included, drops the socket so the next request opens a fresh one.
+    async fn run<T>(&self, what: &str, request: impl Future<Output = Result<T>>) -> Result<T> {
+        let r = match tokio::time::timeout(REQUEST_TIMEOUT, request).await {
+            Ok(r) => r,
+            Err(_) => Err(WifiError::Timeout(format!(
+                "nl80211 {what}: no reply from the kernel within {} s",
+                REQUEST_TIMEOUT.as_secs()
+            ))),
+        };
         if r.is_err() {
             self.reset().await;
         }
@@ -116,7 +133,7 @@ impl Nl80211 {
     }
 
     pub async fn wiphy(&self, ifindex: u32) -> Result<WiphyInfo> {
-        let r = async {
+        self.run("wiphy", async {
             let handle = self.handle().await?;
             let mut stream = handle
                 .wireless_physic()
@@ -156,15 +173,14 @@ impl Nl80211 {
             }
             info.bands.sort();
             Ok(info)
-        }
-        .await;
-        self.on_err(r).await
+        })
+        .await
     }
 
     /// The kernel's current scan cache. cfg80211 expires entries ~30 s after
     /// they were last heard, so this list is also a freshness filter.
     pub async fn scan_dump(&self, ifindex: u32) -> Result<Vec<BssMeasurement>> {
-        let r = async {
+        self.run("scan dump", async {
             let handle = self.handle().await?;
             let mut stream = handle.scan().dump(ifindex).execute().await;
             let mut out = Vec::new();
@@ -182,14 +198,13 @@ impl Nl80211 {
                 }
             }
             Ok(out)
-        }
-        .await;
-        self.on_err(r).await
+        })
+        .await
     }
 
     /// Link statistics for the AP a managed interface is associated with.
     pub async fn station(&self, ifindex: u32) -> Result<Option<StationLink>> {
-        let r = async {
+        self.run("station dump", async {
             let handle = self.handle().await?;
             let mut stream = handle.station().dump(ifindex).execute().await;
             while let Some(msg) = stream
@@ -234,15 +249,14 @@ impl Nl80211 {
                 }
             }
             Ok(None)
-        }
-        .await;
-        self.on_err(r).await
+        })
+        .await
     }
 
     /// Noise floor per channel centre frequency. Empty when the driver doesn't
     /// implement survey (e.g. iwlwifi).
     pub async fn noise_by_frequency(&self, ifindex: u32) -> Result<HashMap<u32, f32>> {
-        let r = async {
+        self.run("survey dump", async {
             let handle = self.handle().await?;
             let mut stream = handle
                 .survey()
@@ -273,9 +287,8 @@ impl Nl80211 {
                 }
             }
             Ok(out)
-        }
-        .await;
-        self.on_err(r).await
+        })
+        .await
     }
 }
 

@@ -35,6 +35,12 @@ use crate::wifi::models::*;
 
 pub const PROVIDER_ID: &str = "networkmanager";
 
+/// Upper bound for any single D-Bus method call (and for connecting to the
+/// bus). zbus waits forever by default, and a wedged NetworkManager (after
+/// suspend/resume, a firmware crash) or a stuck polkit check would otherwise
+/// block the caller indefinitely. NM answers healthy calls in milliseconds;
+/// `RequestScan` returns before the scan runs.
+const DBUS_METHOD_TIMEOUT: Duration = Duration::from_secs(10);
 const SCAN_TIMEOUT: Duration = Duration::from_secs(15);
 /// A `LastScan` change sooner than this after `RequestScan` is a scan that
 /// was already running (e.g. a supplicant background scan) finishing, not
@@ -66,7 +72,8 @@ impl NmWifiDevice {
 
 #[derive(Default)]
 pub struct NetworkManagerProvider {
-    /// Lazily established; reset on transport failure so we reconnect.
+    /// Lazily established; reset on transport failure or timeout so we
+    /// reconnect.
     conn: Mutex<Option<Connection>>,
     nl: Nl80211,
 }
@@ -81,12 +88,37 @@ impl NetworkManagerProvider {
         if let Some(c) = guard.as_ref() {
             return Ok(c.clone());
         }
-        let conn = Connection::system().await.map_err(|e| {
-            WifiError::ServiceUnavailable(format!("Cannot connect to the system D-Bus: {e}"))
-        })?;
+        let connect = async {
+            zbus::connection::Builder::system()?
+                .method_timeout(DBUS_METHOD_TIMEOUT)
+                .build()
+                .await
+        };
+        let conn = tokio::time::timeout(DBUS_METHOD_TIMEOUT, connect)
+            .await
+            .map_err(|_| {
+                WifiError::Timeout(format!(
+                    "connecting to the system D-Bus took longer than {} s",
+                    DBUS_METHOD_TIMEOUT.as_secs()
+                ))
+            })?
+            .map_err(|e| {
+                WifiError::ServiceUnavailable(format!("Cannot connect to the system D-Bus: {e}"))
+            })?;
         debug!("connected to system D-Bus");
         *guard = Some(conn.clone());
         Ok(conn)
+    }
+
+    /// A call that timed out may have left the connection unusable (e.g. the
+    /// bus or NM restarted across suspend/resume); drop it so the next call
+    /// reconnects.
+    async fn forget_on_timeout<T>(&self, r: Result<T>) -> Result<T> {
+        if let Err(WifiError::Timeout(msg)) = &r {
+            warn!(%msg, "D-Bus call timed out; reconnecting on next use");
+            *self.conn.lock().await = None;
+        }
+        r
     }
 
     /// Connection plus a check that NM actually owns its bus name, so that we
@@ -503,8 +535,31 @@ impl WifiAdapterProvider for NetworkManagerProvider {
         PROVIDER_ID
     }
 
-    #[instrument(skip(self))]
     async fn list_adapters(&self) -> Result<Vec<Adapter>> {
+        let r = self.do_list_adapters().await;
+        self.forget_on_timeout(r).await
+    }
+
+    async fn get_adapter(&self, id: &AdapterId) -> Result<Adapter> {
+        let r = self.do_get_adapter(id).await;
+        self.forget_on_timeout(r).await
+    }
+
+    async fn scan(&self, id: &AdapterId, request: &ScanRequest) -> Result<ScanResult> {
+        let r = self.do_scan(id, request).await;
+        self.forget_on_timeout(r).await
+    }
+
+    async fn get_current_connection(&self, id: &AdapterId) -> Result<Option<ConnectionInfo>> {
+        let r = self.do_get_current_connection(id).await;
+        self.forget_on_timeout(r).await
+    }
+}
+
+/// The trait methods' bodies; the wrappers above add connection recovery.
+impl NetworkManagerProvider {
+    #[instrument(skip(self))]
+    async fn do_list_adapters(&self) -> Result<Vec<Adapter>> {
         let conn = self.nm().await?;
         let radio = Self::radio_state(&conn).await;
         let devices = Self::wifi_devices(&conn).await?;
@@ -515,7 +570,7 @@ impl WifiAdapterProvider for NetworkManagerProvider {
         Ok(adapters)
     }
 
-    async fn get_adapter(&self, id: &AdapterId) -> Result<Adapter> {
+    async fn do_get_adapter(&self, id: &AdapterId) -> Result<Adapter> {
         let conn = self.nm().await?;
         let radio = Self::radio_state(&conn).await;
         let dev = Self::find_device(&conn, id).await?;
@@ -523,7 +578,7 @@ impl WifiAdapterProvider for NetworkManagerProvider {
     }
 
     #[instrument(skip(self, request), fields(trigger = request.trigger))]
-    async fn scan(&self, id: &AdapterId, request: &ScanRequest) -> Result<ScanResult> {
+    async fn do_scan(&self, id: &AdapterId, request: &ScanRequest) -> Result<ScanResult> {
         let started_at = Utc::now();
         let conn = self.nm().await?;
         let radio = Self::radio_state(&conn).await;
@@ -553,7 +608,7 @@ impl WifiAdapterProvider for NetworkManagerProvider {
         })
     }
 
-    async fn get_current_connection(&self, id: &AdapterId) -> Result<Option<ConnectionInfo>> {
+    async fn do_get_current_connection(&self, id: &AdapterId) -> Result<Option<ConnectionInfo>> {
         let conn = self.nm().await?;
         let dev = Self::find_device(&conn, id).await?;
         let Some(ap_path) = dev.active_ap() else {

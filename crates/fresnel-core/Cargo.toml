@@ -21,5 +21,6 @@ zbus.workspace = true
 wl-nl80211.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true }
+# test-util: paused virtual time, so timeout tests don't wait in real time.
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true

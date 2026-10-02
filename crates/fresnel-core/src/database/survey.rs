@@ -458,6 +458,9 @@ impl Database {
 
     // --- Survey points ----------------------------------------------------
 
+    /// Store a point and its samples. At most one sample per BSSID: which
+    /// reading to keep is the caller's decision (Measure Here de-duplicates),
+    /// so a duplicate fails the whole insert rather than replacing a row.
     pub fn insert_survey_point(&self, new: &NewSurveyPoint) -> Result<SurveyPoint> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -487,7 +490,7 @@ impl Database {
         let point_id = tx.last_insert_rowid();
         {
             let mut stmt = tx.prepare(&format!(
-                "INSERT OR REPLACE INTO survey_samples ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                "INSERT INTO survey_samples ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                      ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
                 SAMPLE_COLUMNS.replace("s.", "")
             ))?;
@@ -702,6 +705,30 @@ mod tests {
         assert!(db.delete_survey_point(point.id).unwrap());
         assert!(db.list_survey_points(floor.id).unwrap().is_empty());
         assert!(!db.delete_survey_point(point.id).unwrap());
+    }
+
+    #[test]
+    fn duplicate_bssid_fails_instead_of_overwriting() {
+        let db = Database::open_in_memory().unwrap();
+        let floor = floor_with_plan(&db);
+        let mut other_channel = sample("AA:00:00:00:00:01", Some(-70.0), None);
+        other_channel.frequency_mhz = 5500;
+        let result = db.insert_survey_point(&NewSurveyPoint {
+            floor_id: floor.id,
+            x: 10.0,
+            y: 10.0,
+            measured_at: Utc::now(),
+            scan_duration_ms: 3000,
+            adapter: adapter(),
+            samples: vec![
+                sample("AA:00:00:00:00:01", Some(-50.0), None),
+                other_channel,
+            ],
+        });
+        assert!(result.is_err());
+        // Nothing half-stored.
+        assert!(db.list_survey_points(floor.id).unwrap().is_empty());
+        assert_eq!(db.get_floor(floor.id).unwrap().unwrap().point_count, 0);
     }
 
     #[test]

@@ -4,6 +4,7 @@ import type { Project } from "../types/project";
 import type { Building, Floor } from "../types/survey";
 import type { ApiError } from "../types/wifi";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { EntityPicker } from "../components/survey/SurveyNav";
 import { FloorWorkspace } from "../components/survey/FloorWorkspace";
 
@@ -23,6 +24,15 @@ function loadSelection(): Selection {
     /* ignore */
   }
   return { projectId: null, buildingId: null, floorId: null };
+}
+
+/**
+ * A child list remembers the parent it was loaded for. A list for another
+ * parent counts as not loaded, so nothing is shown or measured against it.
+ */
+interface ChildList<T> {
+  parentId: number;
+  list: T[];
 }
 
 /** Keep `wanted` if it's still in the list, else fall back to the first item. */
@@ -67,10 +77,14 @@ function QuickCreate({
 
 export function Survey() {
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  const [floors, setFloors] = useState<Floor[]>([]);
+  const [buildings, setBuildings] = useState<ChildList<Building> | null>(null);
+  const [floors, setFloors] = useState<ChildList<Floor> | null>(null);
   const [sel, setSelState] = useState<Selection>(loadSelection);
   const [error, setError] = useState<ApiError | null>(null);
+  // Bumped to reload a level after a mutation.
+  const [projectsRev, setProjectsRev] = useState(0);
+  const [buildingsRev, setBuildingsRev] = useState(0);
+  const [floorsRev, setFloorsRev] = useState(0);
 
   const setSel = useCallback((update: (s: Selection) => Selection) => {
     setSelState((prev) => {
@@ -90,71 +104,79 @@ export function Survey() {
   };
 
   // --- Loading (each level reloads when its parent selection changes) ------
+  // Responses for a parent that is no longer selected are dropped: a late list
+  // for project A must never pick a building or floor while B is selected.
 
-  const loadProjects = useCallback(async (select?: number | null) => {
-    try {
-      const list = await api.listProjects();
-      setProjects(list);
-      setSel((s) => ({ ...s, projectId: pickId(list, select !== undefined ? select : s.projectId) }));
-    } catch (e) {
-      setError(asApiError(e));
-      setProjects([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.listProjects().then(
+      (list) => {
+        if (cancelled) return;
+        setProjects(list);
+        setSel((s) => ({ ...s, projectId: pickId(list, s.projectId) }));
+      },
+      (e) => {
+        if (cancelled) return;
+        setError(asApiError(e));
+        setProjects((p) => p ?? []);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectsRev, setSel]);
+
+  const projectId = sel.projectId;
+  useEffect(() => {
+    setBuildings((b) => (b?.parentId === projectId ? b : null));
+    if (projectId == null) {
+      setSel((s) => ({ ...s, buildingId: null }));
+      return;
     }
-  }, [setSel]);
+    let cancelled = false;
+    api.listBuildings(projectId).then(
+      (list) => {
+        if (cancelled) return;
+        setBuildings({ parentId: projectId, list });
+        setSel((s) => (s.projectId === projectId ? { ...s, buildingId: pickId(list, s.buildingId) } : s));
+      },
+      (e) => !cancelled && setError(asApiError(e)),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, buildingsRev, setSel]);
 
-  const loadBuildings = useCallback(
-    async (projectId: number | null, select?: number | null) => {
-      if (projectId == null) {
-        setBuildings([]);
-        setSel((s) => ({ ...s, buildingId: null }));
-        return;
-      }
-      try {
-        const list = await api.listBuildings(projectId);
-        setBuildings(list);
-        setSel((s) => ({ ...s, buildingId: pickId(list, select !== undefined ? select : s.buildingId) }));
-      } catch (e) {
-        setError(asApiError(e));
-      }
-    },
-    [setSel],
-  );
-
-  const loadFloors = useCallback(
-    async (buildingId: number | null, select?: number | null) => {
-      if (buildingId == null) {
-        setFloors([]);
-        setSel((s) => ({ ...s, floorId: null }));
-        return;
-      }
-      try {
-        const list = await api.listFloors(buildingId);
-        setFloors(list);
-        setSel((s) => ({ ...s, floorId: pickId(list, select !== undefined ? select : s.floorId) }));
-      } catch (e) {
-        setError(asApiError(e));
-      }
-    },
-    [setSel],
-  );
-
+  const buildingId = sel.buildingId;
   useEffect(() => {
-    void loadProjects();
-  }, [loadProjects]);
-  useEffect(() => {
-    void loadBuildings(sel.projectId);
-  }, [sel.projectId, loadBuildings]);
-  useEffect(() => {
-    void loadFloors(sel.buildingId);
-  }, [sel.buildingId, loadFloors]);
+    setFloors((f) => (f?.parentId === buildingId ? f : null));
+    if (buildingId == null) {
+      setSel((s) => ({ ...s, floorId: null }));
+      return;
+    }
+    let cancelled = false;
+    api.listFloors(buildingId).then(
+      (list) => {
+        if (cancelled) return;
+        setFloors({ parentId: buildingId, list });
+        setSel((s) => (s.buildingId === buildingId ? { ...s, floorId: pickId(list, s.floorId) } : s));
+      },
+      (e) => !cancelled && setError(asApiError(e)),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [buildingId, floorsRev, setSel]);
 
   // --- Mutations ------------------------------------------------------------
+  // Select the result only if its parent is still selected, then reload.
 
   const createProject = async (name: string, customer: string) => {
     try {
       const p = await api.createProject({ name, customerName: customer || null });
       setError(null);
-      await loadProjects(p.id);
+      setSel((s) => ({ ...s, projectId: p.id }));
+      setProjectsRev((n) => n + 1);
       return true;
     } catch (e) {
       return fail(e);
@@ -162,11 +184,12 @@ export function Survey() {
   };
 
   const createBuilding = async (name: string) => {
-    if (sel.projectId == null) return false;
+    if (projectId == null) return false;
     try {
-      const b = await api.createBuilding({ projectId: sel.projectId, name });
+      const b = await api.createBuilding({ projectId, name });
       setError(null);
-      await loadBuildings(sel.projectId, b.id);
+      setSel((s) => (s.projectId === projectId ? { ...s, buildingId: b.id } : s));
+      setBuildingsRev((n) => n + 1);
       return true;
     } catch (e) {
       return fail(e);
@@ -174,13 +197,14 @@ export function Survey() {
   };
 
   const createFloor = async (name: string, levelText: string) => {
-    if (sel.buildingId == null) return false;
+    if (buildingId == null) return false;
     const level = levelText === "" ? 0 : Number(levelText);
     if (!Number.isInteger(level)) return fail({ kind: "invalid_input", message: "Level must be a whole number" });
     try {
-      const f = await api.createFloor({ buildingId: sel.buildingId, name, level });
+      const f = await api.createFloor({ buildingId, name, level });
       setError(null);
-      await loadFloors(sel.buildingId, f.id);
+      setSel((s) => (s.buildingId === buildingId ? { ...s, floorId: f.id } : s));
+      setFloorsRev((n) => n + 1);
       return true;
     } catch (e) {
       return fail(e);
@@ -191,13 +215,16 @@ export function Survey() {
     try {
       if (what === "project") {
         await api.deleteProject(id);
-        await loadProjects(null);
+        setSel((s) => (s.projectId === id ? { ...s, projectId: null } : s));
+        setProjectsRev((n) => n + 1);
       } else if (what === "building") {
         await api.deleteBuilding(id);
-        await loadBuildings(sel.projectId, null);
+        setSel((s) => (s.buildingId === id ? { ...s, buildingId: null } : s));
+        setBuildingsRev((n) => n + 1);
       } else {
         await api.deleteFloor(id);
-        await loadFloors(sel.buildingId, null);
+        setSel((s) => (s.floorId === id ? { ...s, floorId: null } : s));
+        setFloorsRev((n) => n + 1);
       }
       setError(null);
     } catch (e) {
@@ -205,12 +232,17 @@ export function Survey() {
     }
   };
 
-  const onFloorChange = (f: Floor) => setFloors((fs) => fs.map((x) => (x.id === f.id ? f : x)));
+  const updateFloor = useCallback((id: number, update: (f: Floor) => Floor) => {
+    setFloors((fl) => fl && { ...fl, list: fl.list.map((x) => (x.id === id ? update(x) : x)) });
+  }, []);
 
   // --- Render ---------------------------------------------------------------
 
-  const floor = floors.find((f) => f.id === sel.floorId) ?? null;
-  const nextLevel = floors.length ? Math.max(...floors.map((f) => f.level)) + 1 : 0;
+  const buildingList = buildings?.parentId === sel.projectId ? buildings.list : null;
+  const building = buildingList?.find((b) => b.id === sel.buildingId) ?? null;
+  const floorList = building && floors?.parentId === building.id ? floors.list : null;
+  const floor = floorList?.find((f) => f.id === sel.floorId) ?? null;
+  const nextLevel = floorList?.length ? Math.max(...floorList.map((f) => f.level)) + 1 : 0;
 
   if (projects === null) return <div className="page" />;
 
@@ -247,7 +279,7 @@ export function Survey() {
         <span className="crumb-sep">›</span>
         <EntityPicker
           label="Building"
-          items={buildings.map((b) => ({ id: b.id, label: b.name }))}
+          items={(buildingList ?? []).map((b) => ({ id: b.id, label: b.name }))}
           selectedId={sel.buildingId}
           onSelect={(id) => setSel((s) => ({ ...s, buildingId: id }))}
           onCreate={createBuilding}
@@ -259,7 +291,10 @@ export function Survey() {
         <span className="crumb-sep">›</span>
         <EntityPicker
           label="Floor"
-          items={floors.map((f) => ({ id: f.id, label: `${f.name}${f.pointCount ? ` · ${f.pointCount} pts` : ""}` }))}
+          items={(floorList ?? []).map((f) => ({
+            id: f.id,
+            label: `${f.name}${f.pointCount ? ` · ${f.pointCount} pts` : ""}`,
+          }))}
           selectedId={sel.floorId}
           onSelect={(id) => setSel((s) => ({ ...s, floorId: id }))}
           onCreate={createFloor}
@@ -267,19 +302,19 @@ export function Survey() {
           deleteTitle={`Deletes the floor, its plan and ${floor?.pointCount ?? 0} measured point(s)`}
           placeholder="Floor name"
           extra={{ placeholder: "Level", type: "number", initial: String(nextLevel), className: "input-level" }}
-          disabled={sel.buildingId == null}
+          disabled={building == null}
         />
       </nav>
 
       {error && <ErrorBanner error={error} />}
 
-      {sel.projectId != null && buildings.length === 0 ? (
+      {sel.projectId != null && buildingList?.length === 0 ? (
         <section className="card survey-empty">
           <h2>Add a building</h2>
           <p className="muted">Name the building you are surveying. You can add more later.</p>
           <QuickCreate placeholder="Building name" button="Add building" onCreate={createBuilding} />
         </section>
-      ) : sel.buildingId != null && floors.length === 0 ? (
+      ) : building && floorList?.length === 0 ? (
         <section className="card survey-empty">
           <h2>Add a floor</h2>
           <p className="muted">Each floor gets its own plan and measurements.</p>
@@ -290,7 +325,9 @@ export function Survey() {
           />
         </section>
       ) : floor ? (
-        <FloorWorkspace key={floor.id} floor={floor} onFloorChange={onFloorChange} />
+        <ErrorBoundary key={floor.id} title="The floor view stopped working">
+          <FloorWorkspace floor={floor} onFloorChange={(update) => updateFloor(floor.id, update)} />
+        </ErrorBoundary>
       ) : null}
     </div>
   );

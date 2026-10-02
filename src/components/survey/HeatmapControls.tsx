@@ -1,6 +1,7 @@
 import type { Band } from "../../types/wifi";
 import type { PlacedAp } from "../../types/survey";
 import { BAND_LABEL } from "../../lib/format";
+import { NumberInput } from "../NumberInput";
 import {
   OVERLAP_COLORS,
   SIGNAL_DOMAIN,
@@ -13,14 +14,18 @@ import {
   floorNetworks,
 } from "../../lib/heatmap";
 
-const METRICS: { id: HeatMetric; label: string; title: string }[] = [
+export const METRICS: { id: HeatMetric; label: string; title: string }[] = [
   { id: "signal", label: "Signal", title: "Signal strength of the chosen network (strongest BSSID at each spot)" },
   { id: "coverage", label: "Coverage", title: "Where the signal meets a target level" },
   { id: "overlap", label: "AP overlap", title: "How many APs are heard above a level: 2+ helps roaming" },
   { id: "serving", label: "Serving AP", title: "Which placed access point is strongest at each spot" },
 ];
 
-const BANDS: (Band | "all")[] = ["all", "2.4ghz", "5ghz", "6ghz"];
+export const BANDS: (Band | "all")[] = ["all", "2.4ghz", "5ghz", "6ghz"];
+
+/** Range of the coverage / overlap / serving threshold, dBm. */
+export const THRESHOLD_MIN = -95;
+export const THRESHOLD_MAX = -30;
 
 export function encodeNetwork(n: NetworkFilter): string {
   switch (n.kind) {
@@ -176,18 +181,7 @@ export function HeatmapControls({
                 {metric === "coverage" ? "Target" : metric === "serving" ? "Serves from" : "AP counts at"}
               </span>
               <span className="length-input">
-                <input
-                  className="input input-narrow"
-                  type="number"
-                  min={-95}
-                  max={-30}
-                  step={1}
-                  value={threshold}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v)) setThreshold(Math.min(-30, Math.max(-95, v)));
-                  }}
-                />
+                <NumberInput value={threshold} min={THRESHOLD_MIN} max={THRESHOLD_MAX} onCommit={setThreshold} />
                 <span className="muted">dBm</span>
               </span>
             </label>

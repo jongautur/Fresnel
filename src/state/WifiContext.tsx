@@ -42,7 +42,17 @@ interface WifiState {
   setAutoScan: (on: boolean) => void;
   autoScanSeconds: number;
   setAutoScanSeconds: (s: number) => void;
+  /** Auto-scan only runs while a page showing live results is mounted; returns the unregister function. */
+  watchAutoScan: () => () => void;
+  /** Pause auto-scan while the radio is needed elsewhere (Measure Here); returns the release function. */
+  holdAutoScan: () => () => void;
 }
+
+export const AUTO_SCAN_MIN_S = 5;
+export const AUTO_SCAN_MAX_S = 300;
+
+export const clampAutoScanSeconds = (s: number) =>
+  Math.max(AUTO_SCAN_MIN_S, Math.min(AUTO_SCAN_MAX_S, Math.round(s)));
 
 const WifiContext = createContext<WifiState | null>(null);
 
@@ -76,9 +86,11 @@ export function WifiProvider({ children }: { children: ReactNode }) {
   const [connectionError, setConnectionError] = useState<ApiError | null>(null);
 
   const [autoScan, setAutoScan] = useState(false);
-  const [autoScanSeconds, setAutoScanSecondsState] = useState(
-    () => Number(readStorage(AUTO_INTERVAL_KEY)) || 15,
+  const [autoScanSeconds, setAutoScanSecondsState] = useState(() =>
+    clampAutoScanSeconds(Number(readStorage(AUTO_INTERVAL_KEY)) || 15),
   );
+  const [autoScanViewers, setAutoScanViewers] = useState(0);
+  const [autoScanHolds, setAutoScanHolds] = useState(0);
 
   // Guards against applying results for an adapter that is no longer selected.
   const selectedRef = useRef(selectedId);
@@ -146,9 +158,24 @@ export function WifiProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setAutoScanSeconds = useCallback((s: number) => {
-    const clamped = Math.max(5, Math.min(300, Math.round(s)));
+    const clamped = clampAutoScanSeconds(s);
     setAutoScanSecondsState(clamped);
     writeStorage(AUTO_INTERVAL_KEY, String(clamped));
+  }, []);
+
+  const watchAutoScan = useCallback(() => {
+    setAutoScanViewers((n) => n + 1);
+    return () => setAutoScanViewers((n) => n - 1);
+  }, []);
+
+  const holdAutoScan = useCallback(() => {
+    let released = false;
+    setAutoScanHolds((n) => n + 1);
+    return () => {
+      if (released) return;
+      released = true;
+      setAutoScanHolds((n) => n - 1);
+    };
   }, []);
 
   useEffect(() => {
@@ -168,11 +195,14 @@ export function WifiProvider({ children }: { children: ReactNode }) {
     void runScan(false);
   }, [selectedId, runScan]);
 
+  // Only while someone looks at live results, and never queued ahead of a measurement
+  // (scans on one adapter are spaced 5.5 s apart).
+  const autoScanRunning = autoScan && autoScanViewers > 0 && autoScanHolds === 0;
   useEffect(() => {
-    if (!autoScan || !selectedId) return;
+    if (!autoScanRunning || !selectedId) return;
     const t = window.setInterval(() => void runScan(true), autoScanSeconds * 1000);
     return () => window.clearInterval(t);
-  }, [autoScan, autoScanSeconds, selectedId, runScan]);
+  }, [autoScanRunning, autoScanSeconds, selectedId, runScan]);
 
   // Pick up hot-plugged adapters / status changes when the window regains focus.
   useEffect(() => {
@@ -204,6 +234,8 @@ export function WifiProvider({ children }: { children: ReactNode }) {
     setAutoScan,
     autoScanSeconds,
     setAutoScanSeconds,
+    watchAutoScan,
+    holdAutoScan,
   };
 
   return <WifiContext.Provider value={value}>{children}</WifiContext.Provider>;
@@ -213,4 +245,10 @@ export function useWifi(): WifiState {
   const ctx = useContext(WifiContext);
   if (!ctx) throw new Error("useWifi must be used inside <WifiProvider>");
   return ctx;
+}
+
+/** Lets auto-scan run while the calling component is mounted. */
+export function useAutoScanViewer() {
+  const { watchAutoScan } = useWifi();
+  useEffect(() => watchAutoScan(), [watchAutoScan]);
 }

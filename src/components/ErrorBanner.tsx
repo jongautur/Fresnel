@@ -14,6 +14,7 @@ const TITLES: Partial<Record<ApiError["kind"], string>> = {
   database: "Database error",
   invalid_input: "Not possible",
   adapter_mismatch: "Different adapter",
+  backend: "Internal error",
   ipc: "Backend not reachable",
 };
 

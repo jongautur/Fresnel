@@ -1,6 +1,8 @@
 //! Hardware abstraction: everything that knows how to talk to a particular
 //! kind of Wi-Fi hardware or OS service lives under this module.
 
+#[cfg(test)]
+pub mod fake;
 pub mod networkmanager;
 pub mod nl80211;
 pub mod registry;

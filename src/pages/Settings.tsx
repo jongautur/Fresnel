@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { api, asApiError } from "../api/tauri";
 import type { AppInfo } from "../types/project";
 import type { ApiError } from "../types/wifi";
-import { useWifi } from "../state/WifiContext";
+import { AUTO_SCAN_MAX_S, AUTO_SCAN_MIN_S, useWifi } from "../state/WifiContext";
 import { usePreferences, type SignalUnit } from "../state/Preferences";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { KeyValueGrid, KV } from "../components/KeyValue";
+import { NumberInput } from "../components/NumberInput";
 
 export type Theme = "system" | "dark" | "light";
 
@@ -53,13 +54,11 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
             </div>
           </KV>
           <KV k="Auto-scan interval">
-            <input
-              className="input input-narrow"
-              type="number"
-              min={5}
-              max={300}
+            <NumberInput
               value={autoScanSeconds}
-              onChange={(e) => setAutoScanSeconds(Number(e.target.value))}
+              min={AUTO_SCAN_MIN_S}
+              max={AUTO_SCAN_MAX_S}
+              onCommit={setAutoScanSeconds}
             />{" "}
             seconds
             <div className="field-hint">
