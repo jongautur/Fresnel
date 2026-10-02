@@ -104,7 +104,14 @@ mod tests {
             cmd: cmd.into(),
             callback: CallbackFn(0),
             error: CallbackFn(1),
-            url: "tauri://localhost".parse().unwrap(),
+            // The app's own origin, which is what the ACL allows commands from.
+            url: if cfg!(windows) {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            }
+            .parse()
+            .unwrap(),
             body,
             headers,
             invoke_key: INVOKE_KEY.to_string(),
