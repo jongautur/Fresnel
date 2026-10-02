@@ -70,4 +70,5 @@ jobs:
 
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - run: cargo test --workspace --locked
+      # --no-fail-fast: one binary that fails to start must not hide the others.
+      - run: cargo test --workspace --locked --no-fail-fast
