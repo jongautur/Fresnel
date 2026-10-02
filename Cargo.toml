@@ -6,7 +6,7 @@ members = ["crates/fresnel-core", "src-tauri"]
 default-members = ["crates/fresnel-core"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 rust-version = "1.95"

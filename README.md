@@ -79,14 +79,14 @@ The version lives in `Cargo.toml` (`[workspace.package]`); Tauri takes it from t
 
 ```bash
 # bump Cargo.toml, then:
-npm version --no-git-tag-version 0.3.1 && cargo update --workspace
-scripts/check-version.sh v0.3.1
-git tag v0.3.1 && git push origin v0.3.1
+npm version --no-git-tag-version 0.4.0 && cargo update --workspace
+scripts/check-version.sh v0.4.0
+git tag v0.4.0 && git push origin v0.4.0
 ```
 
 The tag runs `.github/workflows/release.yml`: CI, then `.deb`, AppImage and NSIS installer
 with `SHA256SUMS` in a **draft** release. Publish it after checking the builds on a clean machine.
-v0.3.0 predates the workflows; v0.3.1 is the first CI-built release.
+v0.3.0 predates the workflows; v0.4.0 is the first CI-built release.
 
 ## Layout
 
