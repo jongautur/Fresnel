@@ -3,9 +3,12 @@
 
 #[cfg(test)]
 pub mod fake;
+#[cfg(target_os = "linux")]
 pub mod networkmanager;
+#[cfg(target_os = "linux")]
 pub mod nl80211;
 pub mod registry;
+#[cfg(target_os = "linux")]
 pub mod sysfs;
 pub mod traits;
 

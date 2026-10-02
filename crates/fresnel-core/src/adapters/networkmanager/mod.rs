@@ -47,6 +47,12 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(15);
 /// ours; its results can be partial. Observed: 185 ms "scans" that heard
 /// only the associated AP.
 const MIN_OWN_SCAN: Duration = Duration::from_millis(1200);
+/// Minimum time between the end of one hardware scan and the start of the
+/// next on the same adapter. Measured on NetworkManager + iwlwifi: scans
+/// started < 5 s after the previous one often come back having heard only
+/// the associated AP (4 of 6 at 4 s, 0 of 16 at ≥ 5 s). Other drivers are
+/// unmeasured, so they get the same gap.
+const MIN_SCAN_GAP: Duration = Duration::from_millis(5500);
 
 /// A Wi-Fi device as seen by NM at one point in time.
 struct NmWifiDevice {
@@ -104,6 +110,7 @@ impl NetworkManagerProvider {
             })?
             .map_err(|e| {
                 WifiError::ServiceUnavailable(format!("Cannot connect to the system D-Bus: {e}"))
+                    .with_hint(DBUS_HINT)
             })?;
         debug!("connected to system D-Bus");
         *guard = Some(conn.clone());
@@ -114,7 +121,7 @@ impl NetworkManagerProvider {
     /// bus or NM restarted across suspend/resume); drop it so the next call
     /// reconnects.
     async fn forget_on_timeout<T>(&self, r: Result<T>) -> Result<T> {
-        if let Err(WifiError::Timeout(msg)) = &r {
+        if let Some(WifiError::Timeout(msg)) = r.as_ref().err().map(WifiError::base) {
             warn!(%msg, "D-Bus call timed out; reconnecting on next use");
             *self.conn.lock().await = None;
         }
@@ -131,7 +138,7 @@ impl NetworkManagerProvider {
         let name = BusName::try_from(NM_SERVICE).expect("valid bus name");
         match dbus.name_has_owner(name).await {
             Ok(true) => Ok(conn),
-            Ok(false) => Err(WifiError::ServiceUnavailable(NM_NOT_RUNNING.into())),
+            Ok(false) => Err(nm_not_running()),
             Err(e) => {
                 // Bus connection likely broken (e.g. dbus-daemon restarted).
                 *self.conn.lock().await = None;
@@ -312,11 +319,14 @@ impl NetworkManagerProvider {
             status,
             status_detail,
             connected_ssid,
+            scan_spacing_ms: None,
         }
     }
 
-    /// Add kernel measurements (dBm, freshness, PHY, BSS Load, noise) to
-    /// NM's observations. Returns whether nl80211 data was available.
+    /// Add kernel measurements (dBm, freshness, PHY, BSS Load, noise) and
+    /// what the AP's elements say (channel width/centre, RSN/WPA detail, MLD
+    /// address) to NM's observations. Returns whether nl80211 data was
+    /// available.
     async fn enrich(&self, dev: &NmWifiDevice, aps: &mut [AccessPointObservation]) -> bool {
         let Some(ifindex) = nl80211::ifindex(&dev.interface) else {
             return false;
@@ -365,9 +375,17 @@ impl NetworkManagerProvider {
         match status {
             AdapterStatus::RadioOff => Err(WifiError::RadioDisabled(detail)),
             AdapterStatus::Unmanaged | AdapterStatus::Unavailable => {
-                Err(WifiError::AdapterUnavailable {
+                let err = WifiError::AdapterUnavailable {
                     id: dev.id().to_string(),
                     reason: detail,
+                };
+                Err(if status == AdapterStatus::Unmanaged {
+                    err.with_hint(format!(
+                        "Let NetworkManager manage it: `nmcli device set {} managed yes`.",
+                        dev.interface
+                    ))
+                } else {
+                    err
                 })
             }
             _ => Ok(()),
@@ -404,7 +422,8 @@ impl NetworkManagerProvider {
 
         let requested = Instant::now();
         if let Err(e) = wireless.request_scan(options()).await {
-            return match map_zbus_error(e, "RequestScan") {
+            let err = map_zbus_error(e, "RequestScan");
+            return match err.base() {
                 WifiError::ScanRejected(msg) => {
                     warn!(interface = %dev.interface, %msg, "scan rejected; using cached results");
                     Ok((
@@ -414,7 +433,7 @@ impl NetworkManagerProvider {
                         )),
                     ))
                 }
-                other => Err(other),
+                _ => Err(err),
             };
         }
 
@@ -543,6 +562,10 @@ impl WifiAdapterProvider for NetworkManagerProvider {
     async fn get_adapter(&self, id: &AdapterId) -> Result<Adapter> {
         let r = self.do_get_adapter(id).await;
         self.forget_on_timeout(r).await
+    }
+
+    fn min_scan_interval(&self, _id: &AdapterId) -> Duration {
+        MIN_SCAN_GAP
     }
 
     async fn scan(&self, id: &AdapterId, request: &ScanRequest) -> Result<ScanResult> {
@@ -701,6 +724,8 @@ fn observation(
         timestamp: now,
         adapter_id: adapter_id.clone(),
         bssid,
+        // NM doesn't expose it; filled from the Multi-Link element.
+        mld_address: None,
         ssid,
         ssid_raw,
         hidden,
@@ -708,7 +733,7 @@ fn observation(
         channel: channel_for_frequency(frequency_mhz),
         band: band_for_frequency(frequency_mhz),
         channel_width_mhz: prop::<u32>(props, "Bandwidth").filter(|b| *b > 0),
-        // Refined with the HT Operation element if nl80211 data is available.
+        // Refined with the operation elements if nl80211 data is available.
         channel_center_mhz: channel_center_mhz(
             frequency_mhz,
             prop::<u32>(props, "Bandwidth").filter(|b| *b > 0),
@@ -747,6 +772,14 @@ fn apply_wiphy(caps: &mut AdapterCapabilities, wiphy: &WiphyInfo) {
     caps.ap_mode = Capability::from_bool(wiphy.ap_mode);
 }
 
+/// Apply one kernel BSS entry to NM's observation.
+///
+/// Width/centre and security come from the AP's own elements where they
+/// parse, since they are what the AP declares (NM's `Bandwidth` is absent
+/// before NM 1.46 and has no 320 MHz; its key-management flags have no
+/// FT/SHA-256/SAE-EXT-KEY/PMF detail). On a disagreement the elements win
+/// and the difference is logged at debug. Where the elements are absent or
+/// inconsistent, NM's values stay.
 fn apply_measurement(ap: &mut AccessPointObservation, m: &BssMeasurement, noise_dbm: Option<f32>) {
     ap.signal.dbm = m.signal_dbm;
     if let Some(age) = m.seen_ms_ago {
@@ -758,11 +791,36 @@ fn apply_measurement(ap: &mut AccessPointObservation, m: &BssMeasurement, noise_
     ap.phy_type = Some(m.elements.phy_type(is_2ghz).to_string());
     ap.channel_utilization_pct = m.elements.channel_utilization_pct();
     ap.station_count = m.elements.station_count;
-    ap.channel_center_mhz = channel_center_mhz(
-        ap.frequency_mhz,
-        ap.channel_width_mhz,
-        m.elements.ht_secondary_offset,
-    );
+    ap.mld_address = m.elements.mld_address();
+
+    let span = m.elements.channel_span(ap.frequency_mhz);
+    if let Some(width) = span.width_mhz {
+        if ap.channel_width_mhz.is_some_and(|nm| nm != width) {
+            debug!(bssid = %ap.bssid, nm = ?ap.channel_width_mhz, ies = width,
+                "channel width: NM and operation elements disagree, using the elements");
+        }
+        ap.channel_width_mhz = Some(width);
+        ap.channel_center_mhz = span.center_mhz;
+    } else {
+        ap.channel_center_mhz = channel_center_mhz(
+            ap.frequency_mhz,
+            ap.channel_width_mhz,
+            m.elements.ht_secondary_offset,
+        );
+    }
+
+    // Only for a BSS with an RSN or WPA element that parsed: an open BSS or
+    // an unparsable element keeps NM's flags-based view.
+    if let Some(sec) = m.elements.security(ap.security.privacy) {
+        if sec.rsn || sec.wpa {
+            if sec.kind != ap.security.kind {
+                debug!(bssid = %ap.bssid, nm = ?ap.security.kind, ies = ?sec.kind,
+                    "security: NM flags and RSN/WPA elements disagree, using the elements");
+            }
+            ap.security = sec;
+        }
+    }
+
     ap.noise_dbm = noise_dbm;
     ap.snr_db = match (m.signal_dbm, noise_dbm) {
         (Some(s), Some(n)) => Some(s - n),

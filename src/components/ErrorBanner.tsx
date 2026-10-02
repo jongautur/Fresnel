@@ -2,7 +2,7 @@ import type { ApiError } from "../types/wifi";
 import { IconAlert } from "./Icons";
 
 const TITLES: Partial<Record<ApiError["kind"], string>> = {
-  service_unavailable: "NetworkManager unavailable",
+  service_unavailable: "Wi-Fi service unavailable",
   no_adapters: "No Wi-Fi adapters",
   adapter_not_found: "Adapter not found",
   adapter_unavailable: "Adapter unavailable",
@@ -18,21 +18,30 @@ const TITLES: Partial<Record<ApiError["kind"], string>> = {
   ipc: "Backend not reachable",
 };
 
+/** Fallback advice that holds on every OS; platform-specific advice comes from the provider as `error.hint`. */
 const HINTS: Partial<Record<ApiError["kind"], string>> = {
   radio_disabled: "Enable Wi-Fi in system settings, or check the hardware switch / airplane mode.",
   adapter_not_found: "The adapter may have been unplugged. Pick another adapter or refresh the list.",
-  permission_denied:
-    "NetworkManager's polkit policy did not allow this. Make sure you are in an active local session.",
 };
 
-export function ErrorBanner({ error, compact = false }: { error: ApiError; compact?: boolean }) {
+export function ErrorBanner({
+  error,
+  compact = false,
+  source,
+}: {
+  error: ApiError;
+  compact?: boolean;
+  /** Where the error came from, e.g. the provider id of a provider issue. */
+  source?: string;
+}) {
   const title = TITLES[error.kind] ?? "Error";
-  const hint = HINTS[error.kind];
+  const hint = error.hint || HINTS[error.kind];
   return (
     <div className={`banner banner-error ${compact ? "banner-compact" : ""}`} role="alert">
       <IconAlert className="banner-icon" />
       <div>
         <strong>{title}</strong>
+        {source && <span className="muted"> · {source}</span>}
         <div className="banner-message">{error.message}</div>
         {hint && !compact && <div className="banner-hint">{hint}</div>}
       </div>

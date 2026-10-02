@@ -16,7 +16,7 @@ export function SignalCell({
   const v = signalView(signal, signalUnit);
   const title =
     v.unit === "%"
-      ? "Signal quality reported by NetworkManager (0–100 %). This is not a dBm value."
+      ? "Signal quality reported by the OS (0–100 %). This is not a dBm value."
       : v.unit === "dBm"
         ? (description ?? "Received signal strength")
         : "No signal reading";

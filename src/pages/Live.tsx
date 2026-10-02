@@ -68,7 +68,9 @@ export function Live() {
       </div>
 
       {adaptersError && <ErrorBanner error={adaptersError} />}
-      {listing?.issues.map((i) => <ErrorBanner key={i.provider} error={i.error} />)}
+      {listing?.issues.map((i) => (
+        <ErrorBanner key={i.provider} error={i.error} source={`${i.provider} provider`} />
+      ))}
       {noAdapters && <ErrorBanner error={{ kind: "no_adapters", message: "No Wi-Fi interfaces were detected on this system." }} />}
       {scanError && <ErrorBanner error={scanError} />}
       {scan?.notice && <NoticeBanner>{scan.notice}</NoticeBanner>}

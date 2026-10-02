@@ -9,8 +9,6 @@
 //! NetworkManager provider uses it to add real dBm, band support and
 //! freshness to NM's scan list.
 
-mod ies;
-
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
@@ -23,8 +21,9 @@ use wl_nl80211::{
     Nl80211IfMode, Nl80211RateInfo, Nl80211StationInfo, Nl80211SurveyInfo,
 };
 
-pub use self::ies::ElementSummary;
 use crate::error::{Result, WifiError};
+use crate::wifi::ies;
+pub use crate::wifi::ies::ElementSummary;
 use crate::wifi::models::{Band, LinkRate};
 
 /// Upper bound for one request (the whole dump, all its messages). The kernel
@@ -353,9 +352,14 @@ fn link_rate(info: &[Nl80211RateInfo]) -> LinkRate {
             Nl80211RateInfo::EhtNss(n) => r.nss = Some(n),
             Nl80211RateInfo::MhzWidth(w) => r.width_mhz = Some(w),
             Nl80211RateInfo::MhzWidth80Plus80 => r.width_mhz = Some(160),
-            Nl80211RateInfo::ShortGi => r.short_gi = true,
+            Nl80211RateInfo::ShortGi => r.short_gi = Some(true),
             _ => {}
         }
+    }
+    // The flag is sent only while SGI is in use, and only means something for
+    // HT/VHT (HE/EHT report their GI in another attribute, not read here).
+    if r.short_gi.is_none() && matches!(r.phy.as_deref(), Some("HT" | "VHT")) {
+        r.short_gi = Some(false);
     }
     r
 }
@@ -378,7 +382,7 @@ mod tests {
         assert_eq!(r.phy.as_deref(), Some("VHT"));
         assert_eq!(
             (r.mcs, r.nss, r.width_mhz, r.short_gi),
-            (Some(9), Some(2), Some(160), true)
+            (Some(9), Some(2), Some(160), Some(true))
         );
     }
 
@@ -386,5 +390,12 @@ mod tests {
     fn ht_mcs_index() {
         let r = link_rate(&[Nl80211RateInfo::Mcs(15)]);
         assert_eq!((r.mcs, r.nss), (Some(7), Some(2)));
+        assert_eq!(r.short_gi, Some(false));
+    }
+
+    #[test]
+    fn gi_unknown_outside_ht_vht() {
+        assert_eq!(link_rate(&[Nl80211RateInfo::HeMcs(11)]).short_gi, None);
+        assert_eq!(link_rate(&[Nl80211RateInfo::Bitrate(540)]).short_gi, None);
     }
 }

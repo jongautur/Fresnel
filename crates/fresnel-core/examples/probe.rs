@@ -3,6 +3,9 @@
 //!   cargo run -p fresnel-core --example probe            # list + cached results
 //!   cargo run -p fresnel-core --example probe -- --scan  # trigger a fresh scan
 //!   cargo run -p fresnel-core --example probe -- --scan --json  # scan result as JSON
+//!   cargo run -p fresnel-core --example probe -- --scan --record office.json
+//!       # also save the first adapter's scan, e.g. as a test fixture
+//!       # (crates/fresnel-core/src/adapters/fixtures/)
 //!   RUST_LOG=fresnel_core=debug cargo run -p fresnel-core --example probe
 
 use std::sync::Arc;
@@ -20,6 +23,11 @@ async fn main() {
         .init();
 
     let trigger = std::env::args().any(|a| a == "--scan");
+    let mut record = std::env::args().skip_while(|a| a != "--record").nth(1);
+    if record.is_none() && std::env::args().any(|a| a == "--record") {
+        eprintln!("--record needs a file name");
+        return;
+    }
     let scanner = Scanner::new(Arc::new(fresnel_core::default_registry()));
 
     let listing = scanner.registry().list_adapters().await;
@@ -45,7 +53,7 @@ async fn main() {
             Err(e) => println!("connection error: [{}] {e}", e.kind()),
         }
 
-        match scanner
+        let result = scanner
             .scan(
                 &a.id,
                 &ScanRequest {
@@ -53,8 +61,17 @@ async fn main() {
                     ssids: vec![],
                 },
             )
-            .await
-        {
+            .await;
+        if let Ok(r) = &result {
+            if let Some(path) = record.take() {
+                let json = serde_json::to_string_pretty(r).unwrap() + "\n";
+                match std::fs::write(&path, json) {
+                    Ok(()) => eprintln!("recorded the scan of {} to {path}", a.id),
+                    Err(e) => eprintln!("could not write {path}: {e}"),
+                }
+            }
+        }
+        match result {
             Ok(r) if std::env::args().any(|a| a == "--json") => {
                 println!("{}", serde_json::to_string(&r).unwrap());
             }

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
 
 use crate::error::{Result, WifiError};
@@ -33,6 +35,16 @@ pub trait WifiAdapterProvider: Send + Sync + 'static {
 
     async fn get_capabilities(&self, id: &AdapterId) -> Result<AdapterCapabilities> {
         Ok(self.get_adapter(id).await?.capabilities)
+    }
+
+    /// Minimum time from the end of one triggered scan on `id` to the start
+    /// of the next. [`Scanner`](crate::wifi::scanner::Scanner) waits this
+    /// long between back-to-back scans, because some service/driver
+    /// combinations return incomplete results when scans come too quickly.
+    /// Per adapter, since drivers (USB dongles in particular) differ.
+    /// Should be measured on the hardware; the default, zero, adds no wait.
+    fn min_scan_interval(&self, _id: &AdapterId) -> Duration {
+        Duration::ZERO
     }
 
     /// Scan for access points. With `request.trigger == false` returns the

@@ -196,7 +196,7 @@ export function WifiProvider({ children }: { children: ReactNode }) {
   }, [selectedId, runScan]);
 
   // Only while someone looks at live results, and never queued ahead of a measurement
-  // (scans on one adapter are spaced 5.5 s apart).
+  // (the backend may space scans on one adapter apart, see Adapter.scanSpacingMs).
   const autoScanRunning = autoScan && autoScanViewers > 0 && autoScanHolds === 0;
   useEffect(() => {
     if (!autoScanRunning || !selectedId) return;

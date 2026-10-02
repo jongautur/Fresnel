@@ -12,15 +12,9 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
-use super::models::{AdapterId, ConnectionInfo, ScanRequest, ScanResult};
+use super::models::{Adapter, AdapterId, ConnectionInfo, ScanRequest, ScanResult};
 use crate::adapters::AdapterRegistry;
 use crate::error::{Result, WifiError};
-
-/// Minimum time between the end of one hardware scan and the start of the
-/// next on the same adapter. Measured on NetworkManager + iwlwifi: scans
-/// started < 5 s after the previous one often come back having heard only
-/// the associated AP (4 of 6 at 4 s, 0 of 16 at ≥ 5 s).
-const MIN_SCAN_GAP: Duration = Duration::from_millis(5500);
 
 /// Overall limit for one provider call, resolving the provider included.
 /// Providers bound their own steps (NetworkManager: 10 s per D-Bus call,
@@ -29,7 +23,11 @@ const MIN_SCAN_GAP: Duration = Duration::from_millis(5500);
 /// adapter's lock forever: Tauri commands can't be cancelled from the UI,
 /// so one hung call would block that adapter until restart. A healthy NM
 /// scan takes 3–8 s, and one that falls back to cached results after its
-/// 15 s wait still finishes well within this.
+/// 15 s wait still finishes well within this. The spacing between
+/// back-to-back scans ([`min_scan_interval`]) is waited out between
+/// resolving the provider and scanning, and doesn't count against it.
+///
+/// [`min_scan_interval`]: crate::adapters::WifiAdapterProvider::min_scan_interval
 const PROVIDER_DEADLINE: Duration = Duration::from_secs(30);
 
 pub struct Scanner {
@@ -71,20 +69,31 @@ impl Scanner {
         let lock = self.adapter_lock(adapter).await;
         let _guard = lock.lock().await;
 
+        // The provider first: the spacing is its to decide.
+        let resolving = Instant::now();
+        let provider = within_deadline(
+            adapter,
+            "scan",
+            PROVIDER_DEADLINE,
+            self.registry.provider_for(adapter),
+        )
+        .await?;
+        let remaining = PROVIDER_DEADLINE.saturating_sub(resolving.elapsed());
+
         if request.trigger {
+            let gap = provider.min_scan_interval(adapter);
             let previous = self.last_triggered.lock().await.get(adapter).copied();
-            if let Some(wait) = previous.and_then(|t| MIN_SCAN_GAP.checked_sub(t.elapsed())) {
+            if let Some(wait) = previous
+                .and_then(|t| gap.checked_sub(t.elapsed()))
+                .filter(|w| !w.is_zero())
+            {
                 debug!(adapter = %adapter, ?wait, "spacing out back-to-back scans");
                 tokio::time::sleep(wait).await;
             }
         }
 
-        let (provider, mut result) = within_deadline(adapter, "scan", async {
-            let provider = self.registry.provider_for(adapter).await?;
-            let result = provider.scan(adapter, request).await?;
-            Ok((provider, result))
-        })
-        .await?;
+        let mut result =
+            within_deadline(adapter, "scan", remaining, provider.scan(adapter, request)).await?;
         if result.scan_triggered {
             self.last_triggered
                 .lock()
@@ -117,26 +126,46 @@ impl Scanner {
         self.last.lock().await.get(adapter).cloned()
     }
 
-    pub async fn current_connection(&self, adapter: &AdapterId) -> Result<Option<ConnectionInfo>> {
-        within_deadline(adapter, "reading the current connection", async {
+    /// The adapter as its provider describes it now, under the same deadline
+    /// as scans (Measure Here reads it before scanning).
+    pub async fn adapter(&self, adapter: &AdapterId) -> Result<Adapter> {
+        within_deadline(adapter, "reading the adapter", PROVIDER_DEADLINE, async {
             self.registry
                 .provider_for(adapter)
                 .await?
-                .get_current_connection(adapter)
+                .get_adapter(adapter)
                 .await
         })
         .await
     }
+
+    pub async fn current_connection(&self, adapter: &AdapterId) -> Result<Option<ConnectionInfo>> {
+        within_deadline(
+            adapter,
+            "reading the current connection",
+            PROVIDER_DEADLINE,
+            async {
+                self.registry
+                    .provider_for(adapter)
+                    .await?
+                    .get_current_connection(adapter)
+                    .await
+            },
+        )
+        .await
+    }
 }
 
-/// Run `call` under [`PROVIDER_DEADLINE`]. On expiry the call is dropped,
-/// releasing whatever it holds, and `Timeout` is returned.
+/// Run `call` under `budget`: [`PROVIDER_DEADLINE`], or what is left of it.
+/// On expiry the call is dropped, releasing whatever it holds, and `Timeout`
+/// is returned.
 async fn within_deadline<T>(
     adapter: &AdapterId,
     what: &str,
+    budget: Duration,
     call: impl Future<Output = Result<T>>,
 ) -> Result<T> {
-    match tokio::time::timeout(PROVIDER_DEADLINE, call).await {
+    match tokio::time::timeout(budget, call).await {
         Ok(r) => r,
         Err(_) => {
             warn!(%adapter, what, "provider did not finish within {PROVIDER_DEADLINE:?}");
@@ -224,17 +253,40 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn triggered_scans_stay_spaced_apart() {
-        let (_fake, scanner, id) = setup();
+        let (fake, scanner, id) = setup();
+        let gap = Duration::from_millis(5500);
+        fake.set_min_scan_interval(gap);
         scanner.scan(&id, &triggered()).await.unwrap();
         let started = Instant::now();
         scanner.scan(&id, &triggered()).await.unwrap();
-        assert!(started.elapsed() >= MIN_SCAN_GAP);
+        assert!(started.elapsed() >= gap);
 
         // Cached reads don't wait.
         let started = Instant::now();
         let cached = ScanRequest::default();
         scanner.scan(&id, &cached).await.unwrap();
         assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn no_spacing_unless_the_provider_asks() {
+        let (_fake, scanner, id) = setup();
+        scanner.scan(&id, &triggered()).await.unwrap();
+        let started = Instant::now();
+        scanner.scan(&id, &triggered()).await.unwrap();
+        assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn spacing_does_not_count_against_the_deadline() {
+        let (fake, scanner, id) = setup();
+        let gap = PROVIDER_DEADLINE + Duration::from_secs(10);
+        fake.set_min_scan_interval(gap);
+        scanner.scan(&id, &triggered()).await.unwrap();
+        let started = Instant::now();
+        let next = scanner.scan(&id, &triggered()).await;
+        assert!(next.expect("spaced scan timed out").scan_triggered);
+        assert!(started.elapsed() >= gap);
     }
 
     #[tokio::test(start_paused = true)]

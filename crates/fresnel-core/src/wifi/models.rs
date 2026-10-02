@@ -145,6 +145,13 @@ pub struct Adapter {
     pub status_detail: Option<String>,
     /// SSID of the current connection, if any.
     pub connected_ssid: Option<String>,
+    /// Minimum gap Fresnel keeps between triggered scans on this adapter
+    /// ([`WifiAdapterProvider::min_scan_interval`]); `Some(0)` means none.
+    /// Filled in by the registry when listing, so `None` from a provider
+    /// itself means "not filled in", never "no spacing".
+    ///
+    /// [`WifiAdapterProvider::min_scan_interval`]: crate::adapters::WifiAdapterProvider::min_scan_interval
+    pub scan_spacing_ms: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -251,18 +258,52 @@ pub enum SecurityKind {
     Unknown,
 }
 
-/// Authentication and key management suites.
+/// Authentication and key management suites (IEEE 802.11-2020 Table 9-151;
+/// WPA v1 suites map onto their RSN equivalents).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Akm {
     Psk,
+    /// PSK with SHA-256 key derivation (00-0F-AC:6).
+    PskSha256,
+    /// 00-0F-AC:20.
+    PskSha384,
+    FtPsk,
+    /// 00-0F-AC:19.
+    FtPskSha384,
     Sae,
+    /// SAE with group-dependent hash (00-0F-AC:24, used by Wi-Fi 7 / MLO).
+    SaeExtKey,
+    FtSae,
+    FtSaeExtKey,
     Ieee8021x,
-    Owe,
-    OweTransition,
+    /// 00-0F-AC:5.
+    Ieee8021xSha256,
+    /// 00-0F-AC:23.
+    Ieee8021xSha384,
+    FtIeee8021x,
+    /// Suite B 128-bit (00-0F-AC:11).
+    SuiteB,
+    /// WPA3-Enterprise 192-bit (00-0F-AC:12).
     SuiteB192,
+    /// FT over 802.1X with SHA-384 (00-0F-AC:13), the FT form of Suite B 192.
+    FtSuiteB192,
+    FilsSha256,
+    FilsSha384,
+    FtFilsSha256,
+    FtFilsSha384,
+    Owe,
+    /// OWE Transition Mode element on the open BSS of an OWE pair. Not an
+    /// AKM suite in the IE, but NetworkManager reports it as one.
+    OweTransition,
+    /// Any other suite: OUI in the upper 24 bits, suite type in the lowest 8
+    /// (e.g. `0x000FAC15` for PASN). Serialised as a bare number.
+    #[serde(untagged)]
+    Unknown(u32),
 }
 
+/// Cipher suites (IEEE 802.11-2020 Table 9-149). `Bip*` only appear as the
+/// group management cipher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Cipher {
@@ -270,6 +311,27 @@ pub enum Cipher {
     Wep104,
     Tkip,
     Ccmp,
+    Ccmp256,
+    Gcmp,
+    Gcmp256,
+    BipCmac128,
+    BipCmac256,
+    BipGmac128,
+    BipGmac256,
+    /// Any other suite, encoded like [`Akm::Unknown`]. Serialised as a bare
+    /// number.
+    #[serde(untagged)]
+    Unknown(u32),
+}
+
+/// Protected Management Frames (802.11w), from the RSN Capabilities
+/// MFPC/MFPR bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pmf {
+    Disabled,
+    Capable,
+    Required,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -285,6 +347,11 @@ pub struct Security {
     pub akms: Vec<Akm>,
     pub pairwise_ciphers: Vec<Cipher>,
     pub group_ciphers: Vec<Cipher>,
+    /// Group management (BIP) cipher; only the RSN element carries it.
+    pub group_mgmt_cipher: Option<Cipher>,
+    /// `None` when the source doesn't say (NetworkManager flags, no RSN
+    /// Capabilities field).
+    pub pmf: Option<Pmf>,
 }
 
 impl Security {
@@ -297,6 +364,8 @@ impl Security {
             akms: vec![],
             pairwise_ciphers: vec![],
             group_ciphers: vec![],
+            group_mgmt_cipher: None,
+            pmf: None,
         }
     }
 }
@@ -316,6 +385,9 @@ pub struct AccessPointObservation {
     pub adapter_id: AdapterId,
     /// Uppercase colon-separated MAC, e.g. `78:20:51:37:70:62`.
     pub bssid: String,
+    /// Wi-Fi 7 MLD MAC address from the Basic Multi-Link element, same form
+    /// as `bssid`. Shared by all affiliated radios of one AP MLD.
+    pub mld_address: Option<String>,
     /// SSID decoded as UTF-8 (lossy). `None` for hidden networks.
     pub ssid: Option<String>,
     /// SSID exactly as broadcast (SSIDs are arbitrary bytes, not text).
@@ -412,5 +484,7 @@ pub struct LinkRate {
     /// Spatial streams.
     pub nss: Option<u8>,
     pub width_mhz: Option<u32>,
-    pub short_gi: bool,
+    /// Short guard interval (HT/VHT); `None` when the provider doesn't say
+    /// (Windows, and HE/EHT, which signal GI differently).
+    pub short_gi: Option<bool>,
 }

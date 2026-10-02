@@ -17,6 +17,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+# The NetworkManager (D-Bus) and nl80211 (netlink) adapters. netlink-sys, via
+# wl-nl80211, doesn't compile on Windows.
+[target.'cfg(target_os = "linux")'.dependencies]
 zbus.workspace = true
 wl-nl80211.workspace = true
 

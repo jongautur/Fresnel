@@ -11,12 +11,23 @@ pub use error::{Result, WifiError};
 
 use std::sync::Arc;
 
-use adapters::networkmanager::NetworkManagerProvider;
 use adapters::{AdapterRegistry, WifiAdapterProvider};
 
 /// Registry with all providers available on this platform, in priority order.
+/// Empty where Fresnel has no provider yet (Windows until its provider
+/// lands); the registry then reports that instead of "no adapters".
 pub fn default_registry() -> AdapterRegistry {
-    let providers: Vec<Arc<dyn WifiAdapterProvider>> =
-        vec![Arc::new(NetworkManagerProvider::new())];
-    AdapterRegistry::new(providers)
+    AdapterRegistry::new(platform_providers())
+}
+
+#[cfg(target_os = "linux")]
+fn platform_providers() -> Vec<Arc<dyn WifiAdapterProvider>> {
+    vec![Arc::new(
+        adapters::networkmanager::NetworkManagerProvider::new(),
+    )]
+}
+
+#[cfg(not(target_os = "linux"))]
+fn platform_providers() -> Vec<Arc<dyn WifiAdapterProvider>> {
+    Vec::new()
 }

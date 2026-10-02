@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, asApiError } from "../api/tauri";
 import type { AppInfo } from "../types/project";
-import type { ApiError } from "../types/wifi";
+import type { Adapter, ApiError } from "../types/wifi";
 import { AUTO_SCAN_MAX_S, AUTO_SCAN_MIN_S, useWifi } from "../state/WifiContext";
 import { usePreferences, type SignalUnit } from "../state/Preferences";
 import { ErrorBanner } from "../components/ErrorBanner";
@@ -11,7 +11,7 @@ import { NumberInput } from "../components/NumberInput";
 export type Theme = "system" | "dark" | "light";
 
 export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
-  const { autoScanSeconds, setAutoScanSeconds } = useWifi();
+  const { autoScanSeconds, setAutoScanSeconds, selectedAdapter } = useWifi();
   const { signalUnit, setSignalUnit } = usePreferences();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -60,7 +60,7 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
               ))}
             </div>
             <div className="field-hint">
-              dBm is the measured signal level. % is NetworkManager's 0–100 quality value. If the chosen value isn't
+              dBm is the measured signal level. % is the OS's 0–100 quality value. If the chosen value isn't
               available for a network, the other is shown with its own unit.
             </div>
           </KV>
@@ -72,10 +72,7 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
               onCommit={setAutoScanSeconds}
             />{" "}
             seconds
-            <div className="field-hint">
-              Scans on the same adapter are always at least 5.5 s apart: scans started sooner after the previous one
-              often hear only the connected network.
-            </div>
+            <div className="field-hint">{scanSpacingHint(selectedAdapter)}</div>
           </KV>
         </KeyValueGrid>
       </section>
@@ -105,5 +102,19 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         </div>
       </section>
     </div>
+  );
+}
+
+/** The scanner's pause between scans on the selected adapter, as the backend reports it. */
+function scanSpacingHint(adapter: Adapter | null): string {
+  if (!adapter || adapter.scanSpacingMs === null) {
+    return "Scans on one adapter run one at a time. Some adapters also need a pause between scans; select one to see it.";
+  }
+  const name = adapter.interfaceName ?? adapter.displayName;
+  if (adapter.scanSpacingMs === 0) return `Scans on ${name} run one at a time, with no pause between them.`;
+  const seconds = (adapter.scanSpacingMs / 1000).toFixed(1);
+  return (
+    `Scans on ${name} are always at least ${seconds} s apart: on this adapter, scans started sooner after ` +
+    "the previous one can come back incomplete."
   );
 }

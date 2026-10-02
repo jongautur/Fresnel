@@ -65,8 +65,9 @@ jobs:
   windows:
     needs: [version, check]
     runs-on: windows-latest
-    # Can't build until the Linux-only adapters are gated (plan step 1c).
-    # Remove once step 1c lands; the release then waits for the installer.
+    # Not blocking until the Windows build has proven itself (the Linux-only
+    # adapters are gated since plan step 1c). Remove once windows-latest is
+    # green; the release then waits for the installer.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7

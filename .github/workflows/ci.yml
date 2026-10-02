@@ -20,9 +20,9 @@ jobs:
   check:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Windows can't pass yet: wl-nl80211 / netlink-sys don't compile there until
-    # the Linux-only adapters are gated (plan step 1c). Visible, not blocking.
-    # Drop `experimental` once step 1c lands.
+    # Windows is visible, not blocking, until it has proven itself: the
+    # Linux-only adapters are gated (plan step 1c), but that was never built
+    # on Windows before. Drop `experimental` once windows-latest is green.
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false

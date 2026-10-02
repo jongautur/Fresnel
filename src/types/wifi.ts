@@ -54,6 +54,8 @@ export interface Adapter {
   status: AdapterStatus;
   statusDetail: string | null;
   connectedSsid: string | null;
+  /** Minimum gap between triggered scans on this adapter; 0 = none. Null if not reported. */
+  scanSpacingMs: number | null;
 }
 
 export interface ProviderIssue {
@@ -89,8 +91,48 @@ export type SecurityKind =
   | "wpa3_enterprise"
   | "unknown";
 
-export type Akm = "psk" | "sae" | "ieee8021x" | "owe" | "owe_transition" | "suite_b192";
-export type Cipher = "wep40" | "wep104" | "tkip" | "ccmp";
+/** A bare number is an unrecognised suite selector (OUI << 8 | type). */
+export type Akm =
+  | "psk"
+  | "psk_sha256"
+  | "psk_sha384"
+  | "ft_psk"
+  | "ft_psk_sha384"
+  | "sae"
+  | "sae_ext_key"
+  | "ft_sae"
+  | "ft_sae_ext_key"
+  | "ieee8021x"
+  | "ieee8021x_sha256"
+  | "ieee8021x_sha384"
+  | "ft_ieee8021x"
+  | "suite_b"
+  | "suite_b192"
+  | "ft_suite_b192"
+  | "fils_sha256"
+  | "fils_sha384"
+  | "ft_fils_sha256"
+  | "ft_fils_sha384"
+  | "owe"
+  | "owe_transition"
+  | number;
+/** A bare number is an unrecognised suite selector (OUI << 8 | type). */
+export type Cipher =
+  | "wep40"
+  | "wep104"
+  | "tkip"
+  | "ccmp"
+  | "ccmp256"
+  | "gcmp"
+  | "gcmp256"
+  | "bip_cmac128"
+  | "bip_cmac256"
+  | "bip_gmac128"
+  | "bip_gmac256"
+  | number;
+
+/** Protected Management Frames (802.11w). */
+export type Pmf = "disabled" | "capable" | "required";
 
 export interface Security {
   kind: SecurityKind;
@@ -100,12 +142,18 @@ export interface Security {
   akms: Akm[];
   pairwiseCiphers: Cipher[];
   groupCiphers: Cipher[];
+  /** Group management (BIP) cipher; RSN element only. */
+  groupMgmtCipher: Cipher | null;
+  /** null when the source doesn't say (NetworkManager flags, no RSN capabilities). */
+  pmf: Pmf | null;
 }
 
 export interface AccessPointObservation {
   timestamp: string;
   adapterId: AdapterId;
   bssid: string;
+  /** Wi-Fi 7 MLD MAC (Basic Multi-Link element), same form as bssid. */
+  mldAddress: string | null;
   ssid: string | null;
   ssidRaw: number[];
   hidden: boolean;
@@ -170,7 +218,8 @@ export interface LinkRate {
   mcs: number | null;
   nss: number | null;
   widthMhz: number | null;
-  shortGi: boolean;
+  /** null when the provider doesn't report the guard interval */
+  shortGi: boolean | null;
 }
 
 // Mirror of fresnel-core error.rs `WifiError::kind()`.
@@ -193,4 +242,6 @@ export type ErrorKind =
 export interface ApiError {
   kind: ErrorKind;
   message: string;
+  /** Platform-specific advice from the provider (e.g. polkit, Location settings). */
+  hint?: string | null;
 }

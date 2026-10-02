@@ -59,7 +59,7 @@ interface Shape {
   hi: number;
   /** false when the centre had to be assumed (primary channel) */
   centreKnown: boolean;
-  /** Not heard recently — NetworkManager's remembered value, not a current reading. */
+  /** Not heard recently — a value the OS still lists, not a current reading. */
   stale: boolean;
   role: Role;
 }

@@ -1,7 +1,9 @@
 # Fresnel — Architecture
 
-Linux-first native desktop app (Tauri 2 + Rust + React/TypeScript + SQLite).
-Fully offline. No web server, no Electron, no cloud.
+Native desktop app for Linux and Windows (Tauri 2 + Rust + React/TypeScript +
+SQLite). Fully offline. No web server, no Electron, no cloud. Hardware access
+goes through per-OS providers: NetworkManager + nl80211 on Linux (done), the
+Native Wifi API on Windows (in progress).
 
 ## 1. Repository layout
 
@@ -18,6 +20,8 @@ wifi-tool/
 │       │   │   ├── traits.rs     # WifiAdapterProvider trait
 │       │   │   ├── registry.rs   # AdapterRegistry: routes adapter IDs → providers
 │       │   │   ├── sysfs.rs      # PCI/USB product names from sysfs + pci.ids
+│       │   │   ├── fake.rs       # FakeProvider: scripted provider for tests
+│       │   │   ├── nl80211/      # kernel dBm/bands/rates helper (generic netlink)
 │       │   │   └── networkmanager/
 │       │   │       ├── mod.rs    # NetworkManagerProvider (impl of the trait)
 │       │   │       ├── proxies.rs# zbus proxies for org.freedesktop.NetworkManager
@@ -42,14 +46,17 @@ wifi-tool/
 │   ├── src/
 │   │   ├── main.rs
 │   │   ├── lib.rs                # builder, state, logging
-│   │   ├── state.rs              # AppState { registry, scanner, db }
+│   │   ├── logging.rs            # stdout + daily log files, panic hook
+│   │   ├── state.rs              # AppState { scanner, plans, db } + corrupt-DB recovery
 │   │   └── commands/
 │   │       ├── mod.rs
+│   │       ├── app.rs
+│   │       ├── diagnostics.rs    # "Copy diagnostics" report, frontend error log
 │   │       ├── adapters.rs
 │   │       ├── wifi.rs
 │   │       ├── projects.rs
 │   │       └── survey.rs
-│   └── tauri.conf.json           # bundle targets: appimage, deb
+│   └── tauri.conf.json           # + tauri.linux/windows.conf.json: deb/AppImage, NSIS
 ├── src/                          # React + TypeScript (Vite)
 │   ├── api/tauri.ts              # the only file that calls invoke()
 │   ├── types/wifi.ts             # mirrors Rust models
@@ -72,13 +79,17 @@ React UI ──invoke──▶ Tauri commands ──▶ Scanner / Registry / Dat
                                               │
                                               ▼
                                    dyn WifiAdapterProvider
-                                   ├── NetworkManagerProvider   (+ nl80211 helper)
+                                   ├── NetworkManagerProvider   (Linux, + nl80211 helper)
+                                   ├── WindowsProvider          (in progress, Native Wifi API)
+                                   ├── FakeProvider             (tests only)
                                    ├── Nl80211Provider          (future)
                                    ├── PcapMonitorProvider      (future)
                                    └── UsbProbeProvider         (future, ESP32)
 ```
 
-Only `adapters/networkmanager/` knows that NetworkManager exists.
+Only `adapters/networkmanager/` knows that NetworkManager exists. OS-specific
+advice for the user (polkit on Linux, Location on Windows) travels as the
+error's `hint` (see below), so the UI stays provider-neutral.
 
 ## 2. Crates
 
@@ -100,7 +111,7 @@ Deliberately **not** used: the `networkmanager` crate (dbus-rs/libdbus based,
 stale), `tauri-plugin-sql` (would expose raw SQL to the webview; the DB stays
 behind Rust commands), nmcli parsing.
 
-## 3. Talking to NetworkManager
+## 3. Linux provider: NetworkManager
 
 System bus, `org.freedesktop.NetworkManager`, via hand-written `zbus::proxy`
 definitions (only the members we use):
@@ -128,7 +139,11 @@ Errors map to `WifiError` kinds (`ServiceUnavailable`, `NoAdapters`,
 `AdapterNotFound`, `AdapterUnavailable`, `RadioDisabled`, `PermissionDenied`,
 `ScanRejected`, `Timeout`, `Unsupported`, `Database`, `InvalidInput`,
 `AdapterMismatch`, `Backend`). They are serialised as
-`{ kind, message }` and the UI shows a helpful message instead of crashing.
+`{ kind, message, hint }` and the UI shows a helpful message instead of crashing.
+`hint` is optional advice the provider attaches with `WifiError::with_hint`
+(the NM provider: `systemctl start NetworkManager`, the polkit session rule,
+`nmcli device set … managed yes`); `kind()` and the message are unchanged by
+it. Code that matches on a variant should match on `e.base()`.
 
 ### nl80211 enrichment (dBm, bands, freshness)
 
@@ -171,7 +186,10 @@ unreliable signal, both measured on real hardware:
   (185 ms "scans" were seen). The provider requests again once.
 * Scans started < 5 s after the previous one often came back having heard
   only the associated AP (the kernel BSS table is flushed at scan start).
-  `Scanner` spaces hardware scans on one adapter ≥ 5.5 s apart.
+  The NetworkManager provider therefore asks for ≥ 5.5 s between hardware
+  scans on one adapter (`WifiAdapterProvider::min_scan_interval`); `Scanner`
+  enforces whatever the serving provider returns, and the UI shows it
+  (`Adapter.scanSpacingMs`).
 
 ### Per-card calibration (not yet implemented)
 
@@ -198,7 +216,7 @@ projects ─< buildings ─< floors ─< survey_points ─< survey_samples
   refused while the floor has points.
 * **Measure Here** (`survey::measure`): pre-flight (floor, plan, position,
   adapter consistency), then a scan the hardware actually performed (retries if
-  NM declined or the scan looks incomplete), then keep only BSSes whose
+  the provider declined or the scan looks incomplete), then keep only BSSes whose
   `last_seen_age_ms` ≤ scan duration + 250 ms. A point with zero samples is a
   valid dead zone. If a provider reports no ages at all, measuring is refused
   rather than guessing.
@@ -248,12 +266,46 @@ AccessPointObservation {             // one BSSID seen in one scan
 }
 ScanResult { adapter_id, started_at, completed_at, scan_triggered, notice, access_points }
 ConnectionInfo { adapter_id, interface_name, ssid, bssid, frequency_mhz, channel, band,
-                 channel_width_mhz, signal, bitrate_kbps, security, ipv4, gateway_ipv4 }
+                 channel_width_mhz, signal, bitrate_kbps, tx_rate, rx_rate, security,
+                 ipv4_addresses, ipv4_gateway }
+LinkRate { bitrate_kbps, phy, mcs, nss, width_mhz,
+           short_gi: Option<bool> }   // None: not reported (Windows, HE/EHT)
 ```
 
 Access points are **never merged by SSID** in Rust. SSID grouping is a UI toggle.
 
-## 5. Implementation sequence
+## 5. Robustness, data safety, diagnostics
+
+* **Timeouts.** Every provider step is bounded: NM allows 10 s per D-Bus call
+  and for connecting to the bus (zbus waits forever by default; a timed-out
+  connection is dropped and reopened on next use) and 15 s for `LastScan` to
+  advance (then cached results with a notice); each nl80211 dump gets 5 s
+  (the socket is reopened, enrichment skipped). On top, `Scanner` gives each
+  provider call, provider lookup included, a 30 s deadline: the call is
+  dropped and `Timeout` returned, so a wedged service can't hold the
+  per-adapter lock until restart.
+* **Plan files.** `PlanStore` runs an import (write the file, then reference
+  it in the DB) and garbage collection (read the referenced set, then sweep)
+  under one lock, so a collection can't delete a plan mid-import.
+* **Database.** Opening runs `PRAGMA quick_check`. Before a schema upgrade the
+  WAL is checkpointed and the DB copied with `VACUUM INTO` to
+  `fresnel.db.bak-v{old}-{timestamp}` (newest 3 kept); if the backup fails,
+  nothing is migrated. A DB made by a newer Fresnel is refused with a clear
+  message. A damaged DB is moved aside with its WAL/SHM files and floor plans
+  (`*.corrupt-{timestamp}`), a new one is started, and the UI shows a notice.
+  A busy DB is retried on the next command; any other failure leaves live
+  scanning usable while project commands return the error.
+* **Logs and diagnostics.** `tracing` to stdout and to daily
+  `fresnel.YYYY-MM-DD.log` files in the app log dir (14 kept, synchronous
+  writes); a panic hook logs message and backtrace; uncaught frontend errors
+  are forwarded to the log (length-capped, rate-limited). "Copy diagnostics"
+  in Settings builds a plain-text report: version, OS, webview, environment
+  fixes, providers and adapters, database state and the last 200 log lines.
+* **FakeProvider** (`adapters/fake.rs`, `cfg(test)`): a scripted provider
+  (return, fail, hang per call) with no hardware or services, used to test
+  `Scanner` timeouts, error pass-through and lock release on any OS.
+
+## 6. Implementation sequence
 
 1. Workspace + `fresnel-core` models, channel math, error types (+ unit tests)
 2. NM provider: device discovery → adapters (verify with `probe` example on real HW)
@@ -265,5 +317,6 @@ Access points are **never merged by SSID** in Rust. SSID grouping is a UI toggle
 8. Clean-up pass
 
 Done since: survey DB (buildings/floors/floor plans/points/samples), Measure
-Here, channel analyser, heatmaps (IDW). Next: active tests, per-model
-calibration offsets, report export.
+Here, channel analyser, heatmaps (IDW), placed APs, the robustness work in
+§5. Next: the Windows provider, report export, active tests, per-model
+calibration offsets.

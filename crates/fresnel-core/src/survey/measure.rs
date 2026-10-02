@@ -42,12 +42,7 @@ pub async fn measure_here(
     db: Arc<Database>,
     req: MeasureRequest,
 ) -> Result<SurveyPoint> {
-    let adapter = scanner
-        .registry()
-        .provider_for(&req.adapter_id)
-        .await?
-        .get_adapter(&req.adapter_id)
-        .await?;
+    let adapter = scanner.adapter(&req.adapter_id).await?;
     let measuring = measuring_adapter(&adapter);
 
     // Validate before spending seconds on a scan.
@@ -331,7 +326,10 @@ mod tests {
                 privacy: false,
                 wpa: false,
                 rsn: false,
+                group_mgmt_cipher: None,
+                pmf: None,
             },
+            mld_address: None,
             mode: WifiMode::Infrastructure,
             max_bitrate_kbps: None,
             last_seen_age_ms: age,
@@ -515,5 +513,396 @@ mod tests {
         assert!(same_radio(&a, &a));
         assert!(!same_radio(&a, &other_stick));
         assert!(same_radio(&a, &unknown));
+    }
+
+    /// Measure Here through the real path: `Scanner` → `AdapterRegistry` →
+    /// `FakeProvider` replaying recorded scans, into an in-memory database.
+    /// Paused time: scan spacing and retries cost no real time.
+    mod end_to_end {
+        use super::*;
+        use crate::adapters::fake::{self, recording, FakeProvider, Fault, ScanStep};
+        use crate::adapters::AdapterRegistry;
+        use crate::database::projects::NewProject;
+        use crate::survey::models::{FloorPlan, NewBuilding, NewFloor};
+        use tokio::time::Instant;
+
+        struct Rig {
+            fake: Arc<FakeProvider>,
+            scanner: Scanner,
+            db: Arc<Database>,
+            floor_id: i64,
+        }
+
+        impl Rig {
+            fn new(interfaces: &[&str]) -> Self {
+                let fake = Arc::new(FakeProvider::new(interfaces));
+                let registry = AdapterRegistry::new(vec![fake.clone()]);
+                let db = Database::open_in_memory().unwrap();
+                let project = db
+                    .create_project(&NewProject {
+                        name: "HQ".into(),
+                        customer_name: None,
+                    })
+                    .unwrap();
+                let building = db
+                    .create_building(&NewBuilding {
+                        project_id: project.id,
+                        name: "Main".into(),
+                    })
+                    .unwrap();
+                let floor = db
+                    .create_floor(&NewFloor {
+                        building_id: building.id,
+                        name: "Ground".into(),
+                        level: 0,
+                    })
+                    .unwrap();
+                let plan = FloorPlan {
+                    file: "plan-1.png".into(),
+                    mime: "image/png".into(),
+                    width: 1000.0,
+                    height: 500.0,
+                };
+                db.set_floor_plan(floor.id, &plan).unwrap();
+                Self {
+                    fake,
+                    scanner: Scanner::new(Arc::new(registry)),
+                    db: Arc::new(db),
+                    floor_id: floor.id,
+                }
+            }
+
+            fn request(&self, interface: &str) -> MeasureRequest {
+                MeasureRequest {
+                    floor_id: self.floor_id,
+                    x: 120.0,
+                    y: 80.0,
+                    adapter_id: FakeProvider::adapter_id(interface),
+                    allow_adapter_change: false,
+                }
+            }
+
+            async fn measure(&self, interface: &str) -> Result<SurveyPoint> {
+                measure_here(&self.scanner, self.db.clone(), self.request(interface)).await
+            }
+
+            fn stored(&self) -> Vec<SurveyPoint> {
+                self.db.list_survey_points(self.floor_id).unwrap()
+            }
+        }
+
+        fn bssids(point: &SurveyPoint) -> Vec<&str> {
+            let mut b: Vec<_> = point.samples.iter().map(|s| s.bssid.as_str()).collect();
+            b.sort();
+            b
+        }
+
+        fn fault(after_ms: u64, fault: Fault) -> ScanStep {
+            ScanStep::Fault {
+                after: Duration::from_millis(after_ms),
+                fault,
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn stores_a_normal_scan_as_recorded() {
+            let rig = Rig::new(&["wlan0"]);
+            let office = recording("office");
+            rig.fake.script("wlan0", [ScanStep::replay(office.clone())]);
+
+            let point = rig.measure("wlan0").await.unwrap();
+            assert_eq!(rig.fake.scan_calls(), 1);
+            assert_eq!(point.scan_duration_ms, 3150);
+            assert_eq!(point.adapter.id, FakeProvider::adapter_id("wlan0"));
+            assert_eq!(point.adapter.provider, fake::PROVIDER_ID);
+            assert_eq!(point.samples.len(), office.access_points.len());
+            // Every reading stored as the provider reported it: nothing
+            // converted, filled in or dropped.
+            for sample in &point.samples {
+                let heard = office
+                    .access_points
+                    .iter()
+                    .find(|ap| ap.bssid == sample.bssid)
+                    .unwrap();
+                assert_eq!(sample, &Sample::from(heard));
+            }
+            assert_eq!(rig.stored(), [point]);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn stale_entries_are_not_stored() {
+            let rig = Rig::new(&["wlan0"]);
+            let stale = recording("stale");
+            assert_eq!(stale.access_points.len(), 5);
+            rig.fake.script("wlan0", [ScanStep::replay(stale)]);
+
+            let point = rig.measure("wlan0").await.unwrap();
+            // Heard 210 ms and 1.65 s before the end of a 3.3 s scan; the
+            // entries remembered from 27 s, 91 s and 4 min ago are dropped.
+            assert_eq!(bssids(&point), ["F0:9F:C2:7A:10:21", "F0:9F:C2:7A:44:A1"]);
+            assert_eq!(rig.stored(), [point]);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn retries_a_scan_that_heard_only_the_connected_ap() {
+            let rig = Rig::new(&["wlan0"]);
+            let office = recording("office");
+            rig.fake.script(
+                "wlan0",
+                [
+                    ScanStep::replay(recording("connected_only")),
+                    ScanStep::replay(office.clone()),
+                ],
+            );
+
+            let started = Instant::now();
+            let point = rig.measure("wlan0").await.unwrap();
+            assert_eq!(rig.fake.scan_calls(), 2);
+            assert!(started.elapsed() >= RETRY_DELAY);
+            assert_eq!(point.samples.len(), office.access_points.len());
+            assert_eq!(point.scan_duration_ms, 3150);
+            assert_eq!(rig.stored(), [point]);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn gives_up_when_every_scan_hears_only_the_connected_ap() {
+            let rig = Rig::new(&["wlan0"]);
+            let incomplete = ScanStep::replay(recording("connected_only"));
+            rig.fake.script("wlan0", vec![incomplete; 5]);
+
+            let err = rig.measure("wlan0").await.unwrap_err();
+            assert_eq!(err.kind(), "scan_rejected");
+            assert!(
+                err.to_string().contains("only the connected network"),
+                "{err}"
+            );
+            assert_eq!(rig.fake.scan_calls(), SCAN_ATTEMPTS as usize);
+            assert!(rig.stored().is_empty());
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn saves_a_dead_zone_once_remembered_networks_age_out() {
+            let rig = Rig::new(&["wlan0"]);
+            // The remembered entries age between attempts; by the third they
+            // are older than "moments ago" and the lone link is believed.
+            let steps = (0..3).map(|attempt| {
+                let mut scan = recording("connected_only");
+                for ap in scan.access_points.iter_mut().filter(|ap| !ap.is_connected) {
+                    ap.last_seen_age_ms = ap.last_seen_age_ms.map(|a| a + attempt * 8000);
+                }
+                ScanStep::replay(scan)
+            });
+            rig.fake.script("wlan0", steps);
+
+            let point = rig.measure("wlan0").await.unwrap();
+            assert_eq!(rig.fake.scan_calls(), 3);
+            assert_eq!(bssids(&point), ["F0:9F:C2:7A:10:21"]);
+            assert!(point.samples[0].is_connected);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn duplicate_bssid_keeps_the_named_reading() {
+            let rig = Rig::new(&["wlan0"]);
+            rig.fake
+                .script("wlan0", [ScanStep::replay(recording("hidden_duplicate"))]);
+
+            let point = rig.measure("wlan0").await.unwrap();
+            assert_eq!(
+                bssids(&point),
+                [
+                    "0A:9F:C2:7A:10:20",
+                    "F0:9F:C2:7A:10:20",
+                    "F0:9F:C2:7A:10:21",
+                    "F6:9F:C2:7A:10:21",
+                ]
+            );
+            let iot = point
+                .samples
+                .iter()
+                .find(|s| s.bssid == "F6:9F:C2:7A:10:21")
+                .unwrap();
+            // The probe response, although the beacon was fresher and stronger.
+            assert_eq!(iot.ssid.as_deref(), Some("Corp-IoT"));
+            assert_eq!(iot.signal.dbm, Some(-53.0));
+            // A hidden BSS nobody named stays hidden: no SSID made up.
+            let nameless = point
+                .samples
+                .iter()
+                .find(|s| s.bssid == "0A:9F:C2:7A:10:20")
+                .unwrap();
+            assert_eq!(nameless.ssid, None);
+            assert_eq!(rig.stored(), [point]);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn cached_results_are_never_stored() {
+            let rig = Rig::new(&["wlan0"]);
+            let office = recording("office");
+            let cached = ScanStep::Cached {
+                aps: office.access_points.clone(),
+                notice: Some("scan request rate-limited".into()),
+            };
+            rig.fake.script(
+                "wlan0",
+                [cached.clone(), cached.clone(), ScanStep::replay(office)],
+            );
+            rig.measure("wlan0").await.unwrap();
+            assert_eq!(rig.fake.scan_calls(), 3);
+
+            rig.fake.script("wlan0", vec![cached; 4]);
+            let err = rig.measure("wlan0").await.unwrap_err();
+            assert_eq!(err.kind(), "scan_rejected");
+            assert!(err.to_string().contains("rate-limited"), "{err}");
+            assert_eq!(rig.fake.scan_calls(), 3 + SCAN_ATTEMPTS as usize);
+            assert_eq!(rig.stored().len(), 1);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn adapter_vanishing_mid_measure_stores_nothing() {
+            let rig = Rig::new(&["wlan0"]);
+            rig.fake.script("wlan0", [fault(1500, Fault::Unplug)]);
+            let err = rig.measure("wlan0").await.unwrap_err();
+            assert!(matches!(err, WifiError::AdapterNotFound(_)), "{err:?}");
+            assert!(rig.stored().is_empty());
+            let listing = rig.scanner.registry().list_adapters().await;
+            assert!(listing.adapters.is_empty() && listing.issues.is_empty());
+
+            // Unplugged while waiting to retry an incomplete scan.
+            let rig = Rig::new(&["wlan0"]);
+            rig.fake.script(
+                "wlan0",
+                [
+                    ScanStep::replay(recording("connected_only")),
+                    fault(500, Fault::Unplug),
+                ],
+            );
+            let err = rig.measure("wlan0").await.unwrap_err();
+            assert!(matches!(err, WifiError::AdapterNotFound(_)), "{err:?}");
+            assert_eq!(rig.fake.scan_calls(), 2);
+            assert!(rig.stored().is_empty());
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn faults_mid_measure_give_typed_errors_and_store_nothing() {
+            let cases = [
+                (fault(800, Fault::RadioOff), "radio_disabled"),
+                (fault(800, Fault::ServiceDown), "service_unavailable"),
+                (
+                    ScanStep::Fail(WifiError::PermissionDenied("not authorised".into())),
+                    "permission_denied",
+                ),
+                // Longer than the scanner's deadline for one provider call.
+                (
+                    ScanStep::Fresh {
+                        took: Duration::from_secs(45),
+                        aps: recording("office").access_points,
+                    },
+                    "timeout",
+                ),
+            ];
+            for (step, kind) in cases {
+                let rig = Rig::new(&["wlan0"]);
+                rig.fake.script("wlan0", [step]);
+                let err = rig.measure("wlan0").await.unwrap_err();
+                assert_eq!(err.kind(), kind, "{err}");
+                assert_eq!(rig.fake.scan_calls(), 1, "{kind} was retried");
+                assert!(rig.stored().is_empty(), "{kind}");
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn slow_scan_keeps_what_it_heard_during_its_window() {
+            let rig = Rig::new(&["wlan0"]);
+            let mut aps = recording("office").access_points;
+            aps[1].last_seen_age_ms = Some(11_000);
+            aps[2].last_seen_age_ms = Some(13_000);
+            let (heard, before) = (aps[1].bssid.clone(), aps[2].bssid.clone());
+            rig.fake.script(
+                "wlan0",
+                [ScanStep::Fresh {
+                    took: Duration::from_secs(12),
+                    aps,
+                }],
+            );
+
+            let started = Instant::now();
+            let point = rig.measure("wlan0").await.unwrap();
+            assert_eq!(started.elapsed(), Duration::from_secs(12));
+            assert_eq!(point.scan_duration_ms, 12_000);
+            assert!(point.samples.iter().any(|s| s.bssid == heard));
+            assert!(!point.samples.iter().any(|s| s.bssid == before));
+            assert_eq!(point.samples.len(), 5);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn missing_adapter_dead_service_or_radio_off_fail_cleanly() {
+            let rig = Rig::new(&[]);
+            let err = rig.measure("wlan0").await.unwrap_err();
+            assert_eq!(err.kind(), "adapter_not_found");
+
+            let rig = Rig::new(&["wlan0"]);
+            rig.fake.inject("wlan0", Fault::ServiceDown);
+            let err = rig.measure("wlan0").await.unwrap_err();
+            assert_eq!(err.kind(), "service_unavailable");
+
+            let rig = Rig::new(&["wlan0"]);
+            rig.fake.inject("wlan0", Fault::RadioOff);
+            let err = rig.measure("wlan0").await.unwrap_err();
+            assert_eq!(err.kind(), "radio_disabled");
+            assert!(rig.stored().is_empty());
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn adapter_mismatch_on_a_floor_is_reported() {
+            let rig = Rig::new(&["wlan0", "wlan1"]);
+            rig.fake
+                .script("wlan0", [ScanStep::replay(recording("office"))]);
+            rig.measure("wlan0").await.unwrap();
+
+            let err = rig.measure("wlan1").await.unwrap_err();
+            assert_eq!(err.kind(), "adapter_mismatch");
+            assert!(
+                err.to_string().contains("Fake adapter wlan0 (wlan0)"),
+                "{err}"
+            );
+            // Refused before scanning.
+            assert_eq!(rig.fake.scan_calls(), 1);
+            assert_eq!(rig.stored().len(), 1);
+
+            // Confirmed by the user: measured and stored.
+            let mut req = rig.request("wlan1");
+            req.allow_adapter_change = true;
+            let point = measure_here(&rig.scanner, rig.db.clone(), req)
+                .await
+                .unwrap();
+            assert_eq!(point.adapter.id, FakeProvider::adapter_id("wlan1"));
+            assert_eq!(rig.stored().len(), 2);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_different_stick_under_the_same_name_is_a_mismatch() {
+            let stick = |product_id: &str, name: &str| {
+                let mut a = fake::adapter("wlan1");
+                a.bus = Some(BusInfo {
+                    kind: BusKind::Usb,
+                    vendor_id: Some("0bda".into()),
+                    product_id: Some(product_id.into()),
+                    vendor_name: None,
+                    product_name: Some(name.into()),
+                });
+                a
+            };
+            let rig = Rig::new(&[]);
+            rig.fake.plug(stick("8812", "RTL8812AU"));
+            let first = rig.measure("wlan1").await.unwrap();
+            assert_eq!(first.adapter.hw_id.as_deref(), Some("usb:0bda:8812"));
+
+            // Unplugged and another stick came up as wlan1.
+            rig.fake.plug(stick("b812", "RTL88x2BU"));
+            let err = rig.measure("wlan1").await.unwrap_err();
+            assert_eq!(err.kind(), "adapter_mismatch");
+            assert!(err.to_string().contains("RTL8812AU (wlan1)"), "{err}");
+            assert_eq!(rig.stored(), [first]);
+        }
     }
 }

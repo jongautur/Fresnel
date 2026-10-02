@@ -87,7 +87,7 @@ const BAND_FILTERS: { value: Band | "all"; label: string }[] = [
   { value: "6ghz", label: "6 GHz" },
 ];
 
-/** Rows older than this are probably out of range; NM keeps BSSes for minutes. */
+/** Rows older than this are probably out of range; the OS can keep listing BSSes for minutes. */
 const STALE_MS = 30_000;
 
 interface Group {
@@ -252,12 +252,12 @@ export function WifiTable({
       </header>
       {allQuality && signalUnit === "dbm" && (
         <div className="table-note">
-          This adapter reports no dBm values here; signal is NetworkManager's 0–100 % quality value, not dBm.
+          This adapter reports no dBm values here; signal is the OS's 0–100 % quality value, not dBm.
         </div>
       )}
       {!allQuality && someQualityOnly && (
         <div className="table-note">
-          Rows shown in % were not heard by the radio in the last ~30 s (NetworkManager remembers them longer),
+          Rows shown in % were not heard by the radio in the last ~30 s (the OS keeps listing them longer),
           so no dBm reading exists for them.
         </div>
       )}
@@ -324,12 +324,21 @@ export function WifiTable({
   );
 }
 
+/** Known suites by name; unknown ones (a bare number) as their selector, e.g. "00-0F-AC:30". */
+const suite = (v: string | number) => {
+  if (typeof v === "string") return v;
+  const oui = (v >>> 8).toString(16).toUpperCase().padStart(6, "0");
+  return `${oui.slice(0, 2)}-${oui.slice(2, 4)}-${oui.slice(4)}:${v & 0xff}`;
+};
+
 function securityTitle(ap: AccessPointObservation): string {
   const s = ap.security;
   const parts = [];
-  if (s.akms.length) parts.push(`AKM: ${s.akms.join(", ")}`);
-  if (s.pairwiseCiphers.length) parts.push(`Pairwise: ${s.pairwiseCiphers.join(", ")}`);
-  if (s.groupCiphers.length) parts.push(`Group: ${s.groupCiphers.join(", ")}`);
+  if (s.akms.length) parts.push(`AKM: ${s.akms.map(suite).join(", ")}`);
+  if (s.pairwiseCiphers.length) parts.push(`Pairwise: ${s.pairwiseCiphers.map(suite).join(", ")}`);
+  if (s.groupCiphers.length) parts.push(`Group: ${s.groupCiphers.map(suite).join(", ")}`);
+  if (s.groupMgmtCipher != null) parts.push(`Management group: ${suite(s.groupMgmtCipher)}`);
+  if (s.pmf) parts.push(`PMF: ${s.pmf}`);
   if (ap.maxBitrateKbps) parts.push(`Max rate: ${formatBitrate(ap.maxBitrateKbps)}`);
   return parts.join("\n");
 }

@@ -42,6 +42,39 @@ pub fn channel_for_frequency(mhz: u32) -> Option<u16> {
     }
 }
 
+/// Frequency of channel number `channel` in `band`; the inverse of
+/// [`channel_for_frequency`]. Used for channel numbers carried in
+/// information elements (e.g. VHT/HE/EHT centre frequency segments), which
+/// only make sense together with the band they were received on. `None` for
+/// numbers outside the band's raster.
+pub fn frequency_for_channel(band: Band, channel: u32) -> Option<u32> {
+    let mhz = match band {
+        Band::Band2_4GHz => match channel {
+            14 => 2484,
+            1..=13 => 2407 + channel * 5,
+            _ => return None,
+        },
+        // Same split as the kernel's ieee80211_channel_to_frequency():
+        // 182–196 are the 4.9 GHz (Japan) channels.
+        Band::Band5GHz => match channel {
+            182..=196 => 4000 + channel * 5,
+            1..=181 => 5000 + channel * 5,
+            _ => return None,
+        },
+        Band::Band6GHz => match channel {
+            2 => 5935,
+            1..=233 => 5950 + channel * 5,
+            _ => return None,
+        },
+        Band::Band60GHz => match channel {
+            1..=6 => 56160 + channel * 2160,
+            _ => return None,
+        },
+        Band::Unknown => return None,
+    };
+    (band_for_frequency(mhz) == band).then_some(mhz)
+}
+
 /// Centre frequency of the whole occupied channel (primary + secondaries).
 ///
 /// 5 and 6 GHz bonding is fixed by the channelisation: a 40/80/160 MHz block
@@ -146,6 +179,25 @@ mod tests {
         assert_eq!(channel_for_frequency(5975), Some(5));
         assert_eq!(channel_for_frequency(6115), Some(33));
         assert_eq!(channel_for_frequency(7115), Some(233));
+    }
+
+    #[test]
+    fn channel_to_frequency_round_trips() {
+        for mhz in [
+            2412, 2472, 2484, 5180, 5320, 5885, 4920, 5935, 5955, 6185, 7115, 58320,
+        ] {
+            let band = band_for_frequency(mhz);
+            let ch = channel_for_frequency(mhz).unwrap() as u32;
+            assert_eq!(frequency_for_channel(band, ch), Some(mhz), "{mhz}");
+        }
+        assert_eq!(frequency_for_channel(Band::Band2_4GHz, 0), None);
+        assert_eq!(frequency_for_channel(Band::Band2_4GHz, 36), None);
+        assert_eq!(frequency_for_channel(Band::Band6GHz, 234), None);
+        assert_eq!(frequency_for_channel(Band::Band6GHz, 0), None);
+        assert_eq!(frequency_for_channel(Band::Unknown, 1), None);
+        // 5 GHz channel numbers that would land outside the band.
+        assert_eq!(frequency_for_channel(Band::Band5GHz, 0), None);
+        assert_eq!(frequency_for_channel(Band::Band5GHz, 255), None);
     }
 
     #[test]

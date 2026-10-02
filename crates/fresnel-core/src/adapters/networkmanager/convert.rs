@@ -9,6 +9,7 @@ use crate::error::WifiError;
 use crate::wifi::models::{
     AdapterCapabilities, AdapterStatus, Akm, Capability, Cipher, Security, SecurityKind, WifiMode,
 };
+use crate::wifi::security::classify;
 
 pub type Props = HashMap<String, OwnedValue>;
 
@@ -164,46 +165,20 @@ pub fn security(flags: u32, wpa_flags: u32, rsn_flags: u32) -> Security {
         (SEC_GROUP_CCMP, Cipher::Ccmp),
     ]);
 
-    let has = |bit: u32| all & bit != 0;
-    let kind = if !wpa && !rsn {
-        if privacy {
-            SecurityKind::Wep
-        } else {
-            SecurityKind::Open
-        }
-    } else if has(SEC_KEY_MGMT_EAP_SUITE_B_192) {
-        SecurityKind::Wpa3Enterprise
-    } else if has(SEC_KEY_MGMT_802_1X) {
-        if rsn {
-            SecurityKind::Wpa2Enterprise
-        } else {
-            SecurityKind::WpaEnterprise
-        }
-    } else if has(SEC_KEY_MGMT_SAE) && has(SEC_KEY_MGMT_PSK) {
-        SecurityKind::Wpa2Wpa3Personal
-    } else if has(SEC_KEY_MGMT_SAE) {
-        SecurityKind::Wpa3Personal
-    } else if has(SEC_KEY_MGMT_PSK) {
-        if rsn {
-            SecurityKind::Wpa2Personal
-        } else {
-            SecurityKind::WpaPersonal
-        }
-    } else if has(SEC_KEY_MGMT_OWE) || has(SEC_KEY_MGMT_OWE_TM) {
-        SecurityKind::Owe
-    } else {
-        SecurityKind::Unknown
-    };
-
-    Security {
-        kind,
+    let mut s = Security {
+        kind: SecurityKind::Unknown,
         privacy,
         wpa,
         rsn,
         akms,
         pairwise_ciphers,
         group_ciphers,
-    }
+        // NM's flags carry neither.
+        group_mgmt_cipher: None,
+        pmf: None,
+    };
+    s.kind = classify(&s);
+    s
 }
 
 /// Uppercase, colon-separated MAC.
@@ -213,9 +188,21 @@ pub fn normalise_mac(mac: &str) -> String {
 
 // --- Errors -----------------------------------------------------------------
 
-pub const NM_NOT_RUNNING: &str = "NetworkManager is not running (no owner for \
-    org.freedesktop.NetworkManager on the system bus). Start it with \
-    `sudo systemctl start NetworkManager`.";
+pub fn nm_not_running() -> WifiError {
+    WifiError::ServiceUnavailable(
+        "NetworkManager is not running (no owner for \
+         org.freedesktop.NetworkManager on the system bus)."
+            .into(),
+    )
+    .with_hint("Start it with `sudo systemctl start NetworkManager`.")
+}
+
+/// For errors reaching the system D-Bus at all.
+pub const DBUS_HINT: &str = "Fresnel reads Wi-Fi data from NetworkManager over the \
+    system D-Bus. Check that the dbus and NetworkManager services are running.";
+
+const POLKIT_HINT: &str = "NetworkManager's polkit policy did not allow this for your \
+    user. Make sure you are in an active local session (not remote or inactive).";
 
 /// Map a D-Bus error name/message to a [`WifiError`].
 pub fn classify_dbus_error(name: &str, message: &str, context: &str) -> WifiError {
@@ -225,12 +212,9 @@ pub fn classify_dbus_error(name: &str, message: &str, context: &str) -> WifiErro
         message.to_string()
     };
     if name.ends_with(".ServiceUnknown") || name.ends_with(".NameHasNoOwner") {
-        WifiError::ServiceUnavailable(NM_NOT_RUNNING.into())
+        nm_not_running()
     } else if name.ends_with(".PermissionDenied") || name.ends_with(".AccessDenied") {
-        WifiError::PermissionDenied(format!(
-            "{context}: {detail}. The polkit policy for NetworkManager may not allow this \
-             action for your user (e.g. inactive or remote session)."
-        ))
+        WifiError::PermissionDenied(format!("{context}: {detail}")).with_hint(POLKIT_HINT)
     } else if name == "org.freedesktop.NetworkManager.Device.NotAllowed" {
         WifiError::ScanRejected(detail)
     } else if name.ends_with(".UnknownObject")
@@ -261,9 +245,11 @@ pub fn map_zbus_error(err: zbus::Error, context: &str) -> WifiError {
         }
         zbus::Error::InputOutput(e) => {
             WifiError::ServiceUnavailable(format!("Cannot reach the system D-Bus: {e}"))
+                .with_hint(DBUS_HINT)
         }
         zbus::Error::Address(e) => {
             WifiError::ServiceUnavailable(format!("System D-Bus address is invalid: {e}"))
+                .with_hint(DBUS_HINT)
         }
         other => WifiError::Backend(format!("{context}: {other}")),
     }
@@ -351,6 +337,11 @@ mod tests {
             classify_dbus_error("org.freedesktop.NetworkManager.PermissionDenied", "no", "x")
                 .kind(),
             "permission_denied"
+        );
+        assert!(
+            classify_dbus_error("org.freedesktop.DBus.Error.AccessDenied", "no", "x")
+                .hint()
+                .is_some_and(|h| h.contains("polkit"))
         );
         assert_eq!(
             classify_dbus_error(

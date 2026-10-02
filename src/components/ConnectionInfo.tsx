@@ -4,8 +4,8 @@ import { KeyValueGrid, KV } from "./KeyValue";
 import { SignalCell } from "./SignalCell";
 import { ErrorBanner } from "./ErrorBanner";
 
-const LINK_AVG_HINT =
-  "Link average: the driver's running average over received data frames. " +
+const LINK_SIGNAL_HINT =
+  "Signal of the current link as the driver reports it. " +
   "The scan table shows one beacon reading per scan, so the two values can differ by several dB.";
 
 export function ConnectionInfo({ connection, error }: { connection: Conn | null; error: ApiError | null }) {
@@ -13,7 +13,7 @@ export function ConnectionInfo({ connection, error }: { connection: Conn | null;
     <section className="card">
       <header className="card-header">
         <h2>Current connection</h2>
-        {connection && <SignalCell signal={connection.signal} description={LINK_AVG_HINT} />}
+        {connection && <SignalCell signal={connection.signal} description={LINK_SIGNAL_HINT} />}
       </header>
       {error ? (
         <div className="pad"><ErrorBanner error={error} compact /></div>
@@ -30,15 +30,11 @@ export function ConnectionInfo({ connection, error }: { connection: Conn | null;
           </KV>
           <KV k="Frequency" mono>{formatMhz(connection.frequencyMhz)}</KV>
           <KV k="Band">{connection.band ? BAND_LABEL[connection.band] : null}</KV>
-          <KV k="Link signal" mono hint={LINK_AVG_HINT}>
-            {connection.signal.dbm != null && (
-              <>
-                {connection.signal.dbm.toFixed(0)} dBm <span className="muted">avg</span>
-              </>
-            )}
+          <KV k="Link signal" mono hint={LINK_SIGNAL_HINT}>
+            {connection.signal.dbm != null && <>{connection.signal.dbm.toFixed(0)} dBm</>}
             {connection.signal.dbm != null && connection.signal.qualityPercent != null && " · "}
             {connection.signal.qualityPercent != null && (
-              <span className="muted">{connection.signal.qualityPercent} % (NM)</span>
+              <span className="muted">{connection.signal.qualityPercent} % quality</span>
             )}
           </KV>
           {connection.txRate || connection.rxRate ? (

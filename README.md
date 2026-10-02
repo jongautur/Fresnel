@@ -1,7 +1,9 @@
 # Fresnel
 
-Native Linux desktop tool for Wi-Fi analysis and site surveys.
-Tauri 2 · Rust · React/TypeScript · SQLite · NetworkManager (D-Bus). Fully offline.
+Native desktop tool for Wi-Fi analysis and site surveys, for Linux and Windows.
+Tauri 2 · Rust · React/TypeScript · SQLite. Fully offline.
+Linux reads Wi-Fi through NetworkManager (D-Bus) and nl80211; the Windows provider
+(Native Wifi API) is in progress, so scanning currently works on Linux only.
 
 **Status: v0.3**: adapter discovery, BSSID scanning with real dBm (nl80211),
 current connection with TX/RX link rates, channel overlap map, dBm / % display setting.
@@ -21,9 +23,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Rust toolchai
 npm install
 ```
 
-NetworkManager must be running. Scanning uses the polkit action
+On Linux, NetworkManager must be running. Scanning uses the polkit action
 `org.freedesktop.NetworkManager.wifi.scan`, which is allowed by default for
 users in an active local session. No root is needed.
+
+On Windows: Rust (MSVC toolchain) and Node.js ≥ 20; WebView2 comes with Windows 10/11.
 
 ## Run
 
@@ -35,7 +39,10 @@ From the integrated terminal of the **snap** build of VS Code, use
 `scripts/clean-snap-env.sh npm run tauri dev`. Otherwise GTK picks up snap
 libraries and crashes with `symbol lookup error … /snap/core20/…`.
 
-Logging: `RUST_LOG=fresnel_core=debug npm run tauri dev`.
+Logging: `RUST_LOG=fresnel_core=debug npm run tauri dev`. Logs also go to daily
+`fresnel.YYYY-MM-DD.log` files in the app log folder (Linux: `~/.local/share/io.fresnel.app/logs/`,
+Windows: `%LOCALAPPDATA%\io.fresnel.app\logs\`), panics included. **Settings → Copy diagnostics**
+puts versions, OS, adapters, database state and recent log lines on the clipboard for bug reports.
 
 ## Without the GUI
 
@@ -83,7 +90,7 @@ v0.3.0 predates the workflows; v0.3.1 is the first CI-built release.
 
 | Path | What |
 |---|---|
-| `crates/fresnel-core/src/adapters/` | Hardware providers behind the `WifiAdapterProvider` trait (NetworkManager now) |
+| `crates/fresnel-core/src/adapters/` | Hardware providers behind the `WifiAdapterProvider` trait (NetworkManager on Linux; Windows planned) |
 | `crates/fresnel-core/src/wifi/` | Normalised models, channel math, provider-agnostic `Scanner` |
 | `crates/fresnel-core/src/database/` | SQLite + versioned migrations, project/survey repositories |
 | `crates/fresnel-core/src/survey/` | Survey models, floor plan file store, Measure Here |
@@ -92,7 +99,7 @@ v0.3.0 predates the workflows; v0.3.1 is the first CI-built release.
 
 ## Where the data comes from
 
-NetworkManager triggers scans and supplies the BSS list, connection state and
+On Linux, NetworkManager triggers scans and supplies the BSS list, connection state and
 security. The kernel's nl80211 interface (read-only, no root) adds real **dBm**,
 supported bands (incl. 6 GHz), monitor-mode support, PHY generation, BSS Load and
 TX/RX link rates. Noise is shown only on drivers that report it (not iwlwifi).
@@ -102,18 +109,23 @@ TX/RX link rates. Noise is shown only on drivers that report it (not iwlwifi).
 - NM remembers BSSes for minutes; the kernel only ~30 s. Entries the kernel no longer
   has show % instead of dBm, and the **Seen** column dims rows older than 30 s.
 
+On Windows, the planned provider uses the Native Wifi API (`WlanScan`,
+`WlanGetNetworkBssList`), which reports dBm and % side by side. Fields an OS doesn't
+report stay empty rather than being estimated.
+
 ## Survey measurements
 
 **Measure Here** triggers a fresh scan and stores only the BSSIDs heard *during* that
 scan (raw dBm, %, channel, width, centre, SSID, security, PHY), plus which adapter and
 model took them. The backend's cache is never saved as a measurement:
 
-- If NetworkManager declines the scan, Fresnel retries; after a few attempts it saves nothing
+- If the Wi-Fi service declines the scan, Fresnel retries; after a few attempts it saves nothing
   and says so.
 - Scans that heard only the connected network (while others were in range moments ago), or
   that lost dBm for some BSSIDs, count as incomplete and are retried.
-- Scans on one adapter are spaced at least 5.5 s apart. On NetworkManager + iwlwifi, scans
-  started sooner often heard only the associated AP.
+- Scans on one adapter are spaced as the provider requires: at least 5.5 s with
+  NetworkManager, because on NetworkManager + iwlwifi scans started sooner often heard only
+  the associated AP. Settings shows the spacing for the selected adapter.
 
 **Heatmaps** (toolbar → Heatmap) interpolate the points' dBm with inverse-distance
 weighting. A network not heard at a point counts as "not heard" there (−100 dBm), so a
@@ -124,8 +136,10 @@ the nearest point. Walls aren't modelled, so measure on both sides of walls that
 broadcasts. Fresnel pre-selects the strongest group of BSSIDs sharing a base MAC near that spot.
 Names then appear in point readings and the heatmap. A BSSID belongs to one AP per building.
 
-Floor plans are copied into the app data folder (`~/.local/share/io.fresnel.app/floorplans/`),
-next to `fresnel.db`. Point coordinates are plan pixels; metres come from the floor's scale line.
+Floor plans are copied into the app data folder (`~/.local/share/io.fresnel.app/floorplans/`;
+Windows: `%LOCALAPPDATA%\io.fresnel.app\floorplans\`), next to `fresnel.db`. Before a schema
+upgrade the database is backed up next to itself (`fresnel.db.bak-v…`, last 3 kept); a damaged
+database is set aside as `fresnel.db.corrupt-…` and a new one started, with a notice in the app. Point coordinates are plan pixels; metres come from the floor's scale line.
 
 ## License
 
