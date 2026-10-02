@@ -213,10 +213,17 @@ pub(crate) async fn run(
     };
     if outcome.is_err() {
         // Free the server for the next test at once (harmless if it's gone).
-        let _ = tokio::time::timeout(
-            Duration::from_millis(500),
-            control.write_all(&[CLIENT_TERMINATE as u8]),
-        )
+        // Close gracefully: dropping a socket with unread input sends a
+        // reset, and Windows discards whatever the peer hadn't read yet —
+        // including this byte. So send it, shut down our side (FIN), and
+        // drain until the server closes, all under a short deadline.
+        let _ = tokio::time::timeout(Duration::from_millis(500), async {
+            control.write_all(&[CLIENT_TERMINATE as u8]).await?;
+            control.shutdown().await?;
+            let mut sink = [0u8; 4096];
+            while control.read(&mut sink).await? > 0 {}
+            Ok::<_, std::io::Error>(())
+        })
         .await;
     }
     outcome
