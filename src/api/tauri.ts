@@ -30,6 +30,7 @@ import type {
   TargetOptions,
 } from "../types/requirements";
 import type { FloorAnnotations, NotePin, NotePinInput, NoteTarget, Photo, PhotoTarget } from "../types/notes";
+import type { PointTest, TestSettings } from "../types/pointTests";
 import type { BssidMark, FindingScope, Findings, LinkOptions, MarkStatus } from "../types/findings";
 import type { Branding, BrandingInfo } from "../types/settings";
 
@@ -106,6 +107,13 @@ export const api = {
   listSurveyPoints: (floorId: number) => call<SurveyPoint[]>("list_survey_points", { floorId }),
   measureHere: (request: MeasureRequest) => call<SurveyPoint>("measure_here", { request }),
   deleteSurveyPoint: (id: number) => call<boolean>("delete_survey_point", { id }),
+
+  getTestSettings: () => call<TestSettings>("get_test_settings"),
+  saveTestSettings: (settings: TestSettings) => call<TestSettings>("save_test_settings", { settings }),
+  /** The configured active tests for a point just measured; `testId` is for `cancelActiveTest`. */
+  runPointTests: (pointId: number, testId: string) => call<PointTest[]>("run_point_tests", { pointId, testId }),
+  cancelActiveTest: (testId: string) => call<boolean>("cancel_active_test", { testId }),
+  listFloorPointTests: (floorId: number) => call<PointTest[]>("list_floor_point_tests", { floorId }),
 
   listBuildingAps: (buildingId: number) => call<PlacedAp[]>("list_building_aps", { buildingId }),
   createPlacedAp: (floorId: number, ap: PlacedApInput) => call<PlacedAp>("create_placed_ap", { floorId, ap }),

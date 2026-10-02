@@ -32,19 +32,22 @@ wifi-tool/
 │       │   │   ├── models.rs     # Normalised Adapter / AccessPoint / Connection models
 │       │   │   ├── channel.rs    # frequency ↔ channel ↔ band
 │       │   │   └── scanner.rs    # Scanner service (scan orchestration, provider-agnostic)
+│       │   ├── nettools/         # active tests: ping (ICMP / TCP connect), iperf3 client, routes
 │       │   ├── survey/
-│       │   │   ├── models.rs     # Building / Floor / FloorPlan / FloorScale / SurveyPoint / Sample
+│       │   │   ├── models.rs     # Building / Floor / FloorPlan / FloorScale / SurveyPoint / Sample / PointTest
 │       │   │   ├── filestore.rs  # FileStore: validated files + locked import/GC (plans, photos)
 │       │   │   ├── floorplan.rs  # PlanStore: plan images (FileStore, prefix plan-)
 │       │   │   ├── photos.rs     # PhotoStore: photo import, report copy + thumbnail
-│       │   │   └── measure.rs    # Measure Here: fresh-scan orchestration + freshness filter
+│       │   │   ├── measure.rs    # Measure Here: fresh-scan orchestration + freshness filter
+│       │   │   └── point_tests.rs # "+ run tests" after Measure Here: plan, run, store each test
 │       │   └── database/
 │       │       ├── mod.rs        # Database handle (rusqlite)
 │       │       ├── migrations.rs # Versioned migrations (PRAGMA user_version)
 │       │       ├── projects.rs   # Project repository
 │       │       ├── survey.rs     # Buildings, floors, points, samples
 │       │       ├── notes.rs      # Notes, note pins, per-floor annotations for reports
-│       │       └── photos.rs     # Photo rows
+│       │       ├── photos.rs     # Photo rows
+│       │       └── point_tests.rs # Active test rows (list_floor_point_tests for the report)
 │       └── examples/
 │           └── probe.rs          # CLI: list adapters + scan against real hardware
 ├── src-tauri/                    # Thin Tauri shell
@@ -115,6 +118,8 @@ error's `hint` (see below), so the UI stays provider-neutral.
 | `futures` | concurrent property fetches |
 | `image` 0.25 (jpeg, png, webp only) | photo decode with memory limits, EXIF orientation, resize, JPEG re-encode; pure Rust |
 | `kamadak-exif` 0.6 | EXIF capture time and GPS presence (pure Rust, no deps beyond one tiny crate) |
+| `socket2`, `libc` (Linux) | active tests: unprivileged ping sockets, `SO_BINDTODEVICE`, `TCP_INFO` |
+| `windows` (Windows) | active tests: `IcmpSendEcho2Ex` / `Icmp6SendEcho2`, `GetAdaptersAddresses`, `GetBestInterfaceEx` |
 
 Deliberately **not** used: the `networkmanager` crate (dbus-rs/libdbus based,
 stale), `tauri-plugin-sql` (would expose raw SQL to the webview; the DB stays
@@ -304,9 +309,83 @@ projects ─< buildings ─< floors ─< survey_points ─< survey_samples
   (formula cells defused, UTF-8 BOM) and JSON come from the same dialog.
   Branding (technician, company, PNG/JPEG logo ≤ 2 MB; SVG refused) is an
   app setting: `settings.json` + `branding-logo` in the app data folder.
+* **Active tests** (`nettools`, `survey::point_tests`; migration v7
+  `point_tests`): with "+ run tests", Measure Here first stores the RF
+  point, then the UI calls `run_point_tests`, which pings the Wi-Fi gateway
+  and the optional extra host, and runs iperf3 upload and/or download
+  against the user's server (settings in `<app data>/active-tests.json`,
+  written atomically). Each test is its own row, failed and cancelled ones
+  too, so a dead target never costs a measurement. Details in §3b.
 * **One adapter per floor**: measuring with a different adapter (ID or hardware
   ID) than earlier points returns `adapter_mismatch`; the UI asks and retries
   with `allowAdapterChange`.
+
+## 3b. Active tests (`nettools`)
+
+* **Bound to Wi-Fi.** Every socket is bound to the Wi-Fi interface (Linux
+  `SO_BINDTODEVICE`, unprivileged since Linux 5.7; Windows the interface's
+  source address, found by matching IP Helper's `AdapterName` `{GUID}` to
+  the `windows:{guid}` adapter ID). Before each test the route is checked:
+  Linux reads `/proc/net/route` and `ipv6_route` (longest prefix, then
+  metric), Windows asks `GetBestInterfaceEx`; both feed one pure decision
+  (`route::require_wifi_route`). If the route would leave through Ethernet
+  or a VPN, the test is refused with that reason.
+* **Ping.** Real ICMP echo without privileges: Linux ping sockets
+  (`SOCK_DGRAM` + `IPPROTO_ICMP[V6]`, allowed by `net.ipv4.ping_group_range`),
+  Windows `IcmpSendEcho2Ex` (from the Wi-Fi source address) and
+  `Icmp6SendEcho2`, whose RTTs have 1 ms resolution (`resolutionMs: 1`).
+  Where ICMP isn't allowed, timed TCP connects to a port (a reset counts:
+  it is a real round trip) are labelled `tcp_connect`, with the reason.
+  Each probe's outcome is kept (reply, refused, timeout, unreachable,
+  error); jitter is the mean difference of consecutive RTTs. 100 % loss is
+  a failed test whose hint names the likely causes (Windows hosts drop
+  echo requests by default).
+* **iperf3 client** (`nettools::iperf3`, TCP only, iperf3 3.x servers):
+  37-byte cookie, the server-driven state bytes (PARAM_EXCHANGE 9 …
+  DISPLAY_RESULTS 14; ACCESS_DENIED −1 = busy; SERVER_ERROR −2 plus error
+  codes), 4-byte big-endian length-prefixed JSON, N parallel streams that
+  each send the cookie, upload or reverse, `omit` + `time`. The result is
+  the receiver's average after the omitted seconds: the server's byte
+  count in upload, ours in reverse. Retransmits: Linux `TCP_INFO`
+  (`tcpi_total_retrans`, measured part only) in upload, the server's in
+  reverse, otherwise unknown. A client that gives up sends
+  CLIENT_TERMINATE. Errors carry hints (server firewall, busy server,
+  authentication or bitrate limits Fresnel doesn't support).
+* **Deadlines and cancel.** Connects 5 s, each control step 10 s, a data
+  stream without progress 10 s, a whole iperf3 run omit + time + 60 s, a
+  ping run count × (interval + timeout) + 5 s; blocking OS calls run on
+  the blocking pool with a deadline. A cancel token (`nettools::Cancel`,
+  registered per run in `AppState`, `cancel_active_test`) is checked at
+  every probe and data-loop boundary. One run at a time, only for a point
+  measured in the last 10 minutes.
+* **Link snapshots.** The provider's connection before and after each test
+  (signal, TX/RX rate, PHY, MCS, NSS, width); `roamed` = BSSID changed or
+  link lost, `null` if unknown.
+
+**For the report.** `Database::list_floor_point_tests(floor_id)` returns
+`Vec<PointTest>` (`survey::models`), oldest first, serialised camelCase:
+
+```text
+PointTest { id, pointId, kind: ping|iperf3, target, role: gateway|extra_host|
+            iperf3_upload|iperf3_download, method: icmp|tcp_connect|iperf3_tcp,
+            status: ok|failed|cancelled, startedAt, durationMs, adapterId,
+            link: LinkSnapshot, linkAfter: LinkSnapshot|null, roamed: bool|null,
+            results: { type: "ping", version, method, port, sent, received,
+                       lossPercent, minMs, avgMs, maxMs, jitterMs, resolutionMs,
+                       fallbackReason, probes[] }
+                   | { type: "iperf3", version, direction, server, streams,
+                       durationS, omitS, bitsPerSecond, receiverBytes,
+                       receiverSeconds, measuredBy, senderBytes, retransmits,
+                       retransmitsSource } | null,
+            error, errorHint }
+LinkSnapshot { connected, iface, bssid, frequencyMhz, signalDbm, txKbps,
+               rxKbps, phy, mcs, nss, widthMhz }
+```
+
+Results JSON that can't be read (a later layout) comes back as
+`results: null` and is logged, never guessed. `src/lib/pointTests.ts` has
+the labels the app uses (method, result and link summaries) and
+`src/types/pointTests.ts` the TypeScript mirror.
 
 ## 4. Normalised models (summary — see `wifi/models.rs`)
 
@@ -391,5 +470,5 @@ Access points are **never merged by SSID** in Rust. SSID grouping is a UI toggle
 
 Done since: survey DB (buildings/floors/floor plans/points/samples), Measure
 Here, channel analyser, heatmaps (IDW), placed APs, the robustness work in
-§5. Next: the Windows provider, report export, active tests, per-model
+§5, active tests (§3b). Next: the Windows provider, report export, per-model
 calibration offsets.

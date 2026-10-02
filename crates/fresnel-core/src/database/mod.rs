@@ -10,6 +10,7 @@ pub mod marks;
 mod migrations;
 pub mod notes;
 pub mod photos;
+pub mod point_tests;
 pub mod projects;
 pub mod requirements;
 pub mod survey;

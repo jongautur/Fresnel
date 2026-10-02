@@ -266,6 +266,42 @@ fn all() -> Vec<M<'static>> {
                 PRIMARY KEY (project_id, bssid)
             ) STRICT, WITHOUT ROWID;",
         ),
+        // v7 — active tests per point (ping, iperf3), apart from the RF
+        // samples: a failed target never touches a measurement. The link
+        // at the start is in columns (report tables, filters); the link at
+        // the end and the results are versioned JSON. roamed NULL: unknown.
+        M::up(
+            "CREATE TABLE point_tests (
+                id          INTEGER PRIMARY KEY,
+                point_id    INTEGER NOT NULL REFERENCES survey_points(id) ON DELETE CASCADE,
+                kind        TEXT    NOT NULL CHECK (kind IN ('ping', 'iperf3')),
+                target      TEXT    NOT NULL,
+                role        TEXT    NOT NULL
+                            CHECK (role IN ('gateway', 'extra_host', 'iperf3_upload', 'iperf3_download')),
+                method      TEXT    NOT NULL CHECK (method IN ('icmp', 'tcp_connect', 'iperf3_tcp')),
+                status      TEXT    NOT NULL CHECK (status IN ('ok', 'failed', 'cancelled')),
+                started_at  TEXT    NOT NULL,
+                duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+                adapter_id  TEXT    NOT NULL,
+                connected   INTEGER NOT NULL CHECK (connected IN (0, 1)),
+                iface       TEXT,
+                bssid       TEXT,
+                freq        INTEGER,
+                signal_dbm  REAL,
+                tx_kbps     INTEGER,
+                rx_kbps     INTEGER,
+                phy         TEXT,
+                mcs         INTEGER,
+                nss         INTEGER,
+                width_mhz   INTEGER,
+                link_after_json TEXT CHECK (link_after_json IS NULL OR json_valid(link_after_json)),
+                roamed      INTEGER CHECK (roamed IN (0, 1)),
+                results_json TEXT CHECK (results_json IS NULL OR json_valid(results_json)),
+                error       TEXT,
+                error_hint  TEXT
+            ) STRICT;
+            CREATE INDEX idx_point_tests_point ON point_tests(point_id, started_at);",
+        ),
     ]
 }
 

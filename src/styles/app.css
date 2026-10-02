@@ -327,6 +327,7 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .data-table tbody tr:hover td { background: var(--bg-hover); }
 .data-table .num { text-align: right; }
 .data-table .empty { text-align: center; color: var(--muted); padding: 28px; }
+.data-table td.wrap { white-space: normal; min-width: 240px; vertical-align: top; }
 .col-ssid { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--text-strong); }
 
 .row-connected td { background: var(--accent-soft); }

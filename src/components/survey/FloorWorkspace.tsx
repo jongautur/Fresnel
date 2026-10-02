@@ -5,6 +5,7 @@ import type { ApiError, Band } from "../../types/wifi";
 import type { FloorRequirements } from "../../types/requirements";
 import type { Project } from "../../types/project";
 import type { Building } from "../../types/survey";
+import type { PointTest, TestSettings } from "../../types/pointTests";
 import {
   pxPerMetre,
   type Floor,
@@ -23,6 +24,8 @@ import type { NotePin } from "../../types/notes";
 import { FindingsPanel } from "./FindingsPanel";
 import { ExportDialog } from "./ExportDialog";
 import { PointDetails } from "./PointDetails";
+import { PointTestsTable } from "./PointTestsTable";
+import { plannedTests } from "../../lib/pointTests";
 import { BANDS, HeatmapControls, METRICS, THRESHOLD_MAX, THRESHOLD_MIN } from "./HeatmapControls";
 import { PointRequirements, RequirementsLegend, RequirementsPanel } from "./RequirementsPanel";
 import {
@@ -163,6 +166,16 @@ const isTyping = (t: EventTarget | null) =>
 // Workspace
 // ---------------------------------------------------------------------------
 
+const RUN_TESTS_KEY = "fresnel.runTests";
+
+function loadRunTests(): boolean {
+  try {
+    return localStorage.getItem(RUN_TESTS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function FloorWorkspace({
   floor,
   project,
@@ -184,6 +197,15 @@ export function FloorWorkspace({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [measuring, setMeasuring] = useState(false);
   const [mismatch, setMismatch] = useState<string | null>(null);
+  // Active tests: "+ run tests" toggle, the floor's results, the run in progress.
+  const [runTests, setRunTestsState] = useState(loadRunTests);
+  const [testSettings, setTestSettings] = useState<TestSettings | null>(null);
+  const [pointTests, setPointTests] = useState<PointTest[]>([]);
+  const [testing, setTesting] = useState<{ testId: string; pointId: number } | null>(null);
+  const [testError, setTestError] = useState<ApiError | null>(null);
+  const floorIdRef = useRef(floor.id);
+  floorIdRef.current = floor.id;
+  const testingRef = useRef<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [scaleA, setScaleA] = useState<PlanXY | null>(null);
@@ -227,6 +249,35 @@ export function FloorWorkspace({
       .then(setPoints)
       .catch((e) => setError(asApiError(e)));
   }, [floor.id]);
+
+  // Active tests
+  useEffect(() => {
+    setPointTests([]);
+    setTestError(null);
+    api
+      .listFloorPointTests(floor.id)
+      .then(setPointTests)
+      .catch((e) => setError(asApiError(e)));
+  }, [floor.id]);
+  useEffect(() => {
+    if (!runTests) return;
+    api.getTestSettings().then(setTestSettings, (e) => setTestError(asApiError(e)));
+  }, [runTests]);
+  // Leaving the workspace stops a run: its results would describe a spot nobody is at.
+  useEffect(
+    () => () => {
+      if (testingRef.current) void api.cancelActiveTest(testingRef.current).catch(() => {});
+    },
+    [],
+  );
+  const setRunTests = (on: boolean) => {
+    setRunTestsState(on);
+    try {
+      localStorage.setItem(RUN_TESTS_KEY, on ? "1" : "0");
+    } catch {
+      /* non-essential */
+    }
+  };
 
   // Note pins
   useEffect(() => {
@@ -485,6 +536,8 @@ export function FloorWorkspace({
       setSelectedId(point.id);
       setPending(null);
       onFloorChange((f) => ({ ...f, pointCount: f.pointCount + 1 }));
+      // After the scan, so the tests' traffic can't disturb it.
+      if (runTests) void runTestsAt(point.id);
     } catch (e) {
       const err = asApiError(e);
       if (err.kind === "adapter_mismatch") setMismatch(err.message);
@@ -495,10 +548,35 @@ export function FloorWorkspace({
     }
   };
 
+  const runTestsAt = async (pointId: number) => {
+    const testId = `tests-${pointId}-${Date.now()}`;
+    const floorId = floor.id;
+    testingRef.current = testId;
+    setTesting({ testId, pointId });
+    setTestError(null);
+    // No background scans while tests run: they'd disturb throughput and latency.
+    const releaseAutoScan = holdAutoScan();
+    try {
+      const done = await api.runPointTests(pointId, testId);
+      if (floorIdRef.current === floorId) setPointTests((ts) => [...ts, ...done]);
+    } catch (e) {
+      if (floorIdRef.current === floorId) setTestError(asApiError(e));
+    } finally {
+      releaseAutoScan();
+      testingRef.current = null;
+      setTesting(null);
+    }
+  };
+
+  const cancelTests = () => {
+    if (testing) void api.cancelActiveTest(testing.testId).catch((e) => setTestError(asApiError(e)));
+  };
+
   const removePoint = async (id: number) => {
     try {
       await api.deleteSurveyPoint(id);
       setPoints((ps) => ps.filter((p) => p.id !== id));
+      setPointTests((ts) => ts.filter((t) => t.pointId !== id));
       setSelectedId(null);
       onFloorChange((f) => ({ ...f, pointCount: Math.max(0, f.pointCount - 1) }));
     } catch (e) {
@@ -1009,6 +1087,27 @@ export function FloorWorkspace({
                 </NoticeBanner>
               )}
 
+              {testing && (
+                <section className="card">
+                  <header className="card-header">
+                    <h2>
+                      Testing at point{" "}
+                      <span className="count">{points.findIndex((p) => p.id === testing.pointId) + 1}</span>
+                    </h2>
+                    <button type="button" className="btn btn-small" onClick={cancelTests}>
+                      Cancel
+                    </button>
+                  </header>
+                  <div className="panel-section">
+                    <p className="small">
+                      <IconRadar className="spin" /> {testSettings ? plannedTests(testSettings) : "Running the tests"}…
+                    </p>
+                    <p className="muted small">Stay at the point until they finish.</p>
+                  </div>
+                </section>
+              )}
+              {testError && <ErrorBanner error={testError} compact />}
+
               {pending ? (
                 <section className="card">
                   <header className="card-header">
@@ -1035,15 +1134,32 @@ export function FloorWorkspace({
                         </div>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-measure"
-                        onClick={() => void measure()}
-                        disabled={measuring || !selectedAdapter}
-                      >
-                        <IconRadar className={measuring ? "spin" : ""} />
-                        {measuring ? "Scanning…" : "Measure here"}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-measure"
+                          onClick={() => void measure()}
+                          disabled={measuring || !selectedAdapter || testing != null}
+                        >
+                          <IconRadar className={measuring ? "spin" : ""} />
+                          {measuring ? "Scanning…" : "Measure here"}
+                        </button>
+                        <label className="checkbox">
+                          <input
+                            type="checkbox"
+                            checked={runTests}
+                            onChange={(e) => setRunTests(e.target.checked)}
+                            disabled={measuring}
+                          />
+                          + run tests after the scan
+                        </label>
+                        {runTests && (
+                          <p className="muted small">
+                            {testSettings ? `Then: ${plannedTests(testSettings)}.` : "Then the configured tests."} Set
+                            the targets in Settings → Active tests.
+                          </p>
+                        )}
+                      </>
                     )}
                     <p className="muted small">
                       Stand still while it scans: usually 3–5 s, longer right after another scan. Only networks heard
@@ -1061,6 +1177,7 @@ export function FloorWorkspace({
                   number={points.indexOf(selected) + 1}
                   pxPerMetre={ppm}
                   onDelete={() => void removePoint(selected.id)}
+                  tests={pointTests.filter((t) => t.pointId === selected.id)}
                   requirements={
                     reqProfile && reqEval(selected.id) ? (
                       <PointRequirements evaluation={reqEval(selected.id)!} profileName={reqProfile.name} />
@@ -1092,6 +1209,16 @@ export function FloorWorkspace({
                 onRequirements={setRequirements}
                 onProfilesChanged={() => setRequirementsRev((n) => n + 1)}
               />
+              {pointTests.length > 0 && (
+                <section className="card">
+                  <header className="card-header">
+                    <h2>
+                      Active tests <span className="count">{pointTests.length}</span>
+                    </h2>
+                  </header>
+                  <PointTestsTable tests={pointTests} pointNumbers={new Map(points.map((p, i) => [p.id, i + 1]))} />
+                </section>
+              )}
             </>
           )}
         </aside>

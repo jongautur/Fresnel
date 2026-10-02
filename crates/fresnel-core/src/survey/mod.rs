@@ -7,4 +7,5 @@ pub mod floorplan;
 pub mod measure;
 pub mod models;
 pub mod photos;
+pub mod point_tests;
 pub mod requirements;

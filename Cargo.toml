@@ -21,7 +21,7 @@ rusqlite_migration = "2.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "net", "io-util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
@@ -32,6 +32,9 @@ wl-nl80211 = "0.8"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 # EXIF tags the image crate doesn't interpret (capture time, GPS presence).
 kamadak-exif = "0.6"
+# Active tests (Linux): ping sockets, SO_BINDTODEVICE, TCP_INFO.
+socket2 = "0.6"
+libc = "0.2"
 
 [profile.release]
 lto = true

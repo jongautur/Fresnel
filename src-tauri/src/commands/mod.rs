@@ -6,6 +6,7 @@ pub mod app;
 pub mod diagnostics;
 pub mod findings;
 pub mod notes;
+pub mod point_tests;
 pub mod projects;
 pub mod report;
 pub mod requirements;

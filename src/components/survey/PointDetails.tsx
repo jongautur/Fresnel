@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import type { SurveyPoint } from "../../types/survey";
+import type { PointTest } from "../../types/pointTests";
 import { BAND_LABEL, formatDateTime, phyShort } from "../../lib/format";
 import { KeyValueGrid, KV } from "../KeyValue";
 import { SignalCell } from "../SignalCell";
 import { ConfirmButton } from "../ConfirmButton";
 import { NotesField } from "./NotesField";
 import { PhotoStrip } from "./PhotoStrip";
+import { PointTestsTable } from "./PointTestsTable";
 
 export function PointDetails({
   point,
@@ -14,6 +16,7 @@ export function PointDetails({
   onDelete,
   apNameByBssid,
   requirements,
+  tests = [],
 }: {
   point: SurveyPoint;
   number: number;
@@ -22,6 +25,8 @@ export function PointDetails({
   apNameByBssid?: Map<string, string>;
   /** Pass/fail against the floor's requirement profile. */
   requirements?: ReactNode;
+  /** Active tests run at this point. */
+  tests?: PointTest[];
 }) {
   const iface = point.adapter.id.split(":").slice(1).join(":") || point.adapter.id;
   return (
@@ -50,6 +55,12 @@ export function PointDetails({
         </KV>
       </KeyValueGrid>
       {requirements}
+      {tests.length > 0 && (
+        <div className="panel-section">
+          <span className="field-label">Active tests</span>
+          <PointTestsTable tests={tests} />
+        </div>
+      )}
       <div className="panel-section">
         <NotesField key={point.id} target={{ kind: "point", id: point.id }} />
         <PhotoStrip floorId={point.floorId} target={{ kind: "point", id: point.id }} />

@@ -150,6 +150,154 @@ pub struct SurveyPoint {
     pub samples: Vec<Sample>,
 }
 
+/// One active network test run at a survey point (ping or iperf3), stored
+/// apart from the RF samples. This is the stable shape the UI and the
+/// report read (`Database::list_floor_point_tests`); see ARCHITECTURE.md.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PointTest {
+    pub id: i64,
+    pub point_id: i64,
+    pub kind: PointTestKind,
+    /// The address tested (IP, or `ip:port` for iperf3).
+    pub target: String,
+    /// What the target was: the gateway, the user's extra host, the iperf3 server.
+    pub role: PointTestRole,
+    pub method: PointTestMethod,
+    pub status: PointTestStatus,
+    pub started_at: DateTime<Utc>,
+    pub duration_ms: i64,
+    pub adapter_id: AdapterId,
+    /// The link when the test started.
+    pub link: LinkSnapshot,
+    /// The link when it ended; `None` if it couldn't be read.
+    pub link_after: Option<LinkSnapshot>,
+    /// The BSSID changed during the test; `None` if either side is unknown.
+    pub roamed: Option<bool>,
+    /// Kept for failed tests too when there are results (e.g. 100 % loss).
+    pub results: Option<PointTestResults>,
+    pub error: Option<String>,
+    /// Likely causes and what to do (firewall, busy server, route).
+    pub error_hint: Option<String>,
+}
+
+/// Versioned results (`version` inside each).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PointTestResults {
+    Ping(crate::nettools::PingResult),
+    Iperf3(crate::nettools::Iperf3Result),
+}
+
+/// The Wi-Fi link as the provider reported it at one moment.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LinkSnapshot {
+    pub connected: bool,
+    pub iface: Option<String>,
+    pub bssid: Option<String>,
+    pub frequency_mhz: Option<u32>,
+    pub signal_dbm: Option<f32>,
+    pub tx_kbps: Option<u32>,
+    pub rx_kbps: Option<u32>,
+    /// PHY, MCS, NSS of the TX rate (else RX).
+    pub phy: Option<String>,
+    pub mcs: Option<u8>,
+    pub nss: Option<u8>,
+    pub width_mhz: Option<u32>,
+}
+
+impl LinkSnapshot {
+    pub fn from_connection(c: Option<&crate::wifi::models::ConnectionInfo>) -> Self {
+        let Some(c) = c else {
+            return Self::default();
+        };
+        let rate = c.tx_rate.as_ref().or(c.rx_rate.as_ref());
+        Self {
+            connected: true,
+            iface: c.interface_name.clone(),
+            bssid: c.bssid.clone(),
+            frequency_mhz: c.frequency_mhz,
+            signal_dbm: c.signal.dbm,
+            tx_kbps: c.tx_rate.as_ref().and_then(|r| r.bitrate_kbps),
+            rx_kbps: c.rx_rate.as_ref().and_then(|r| r.bitrate_kbps),
+            phy: rate.and_then(|r| r.phy.clone()),
+            mcs: rate.and_then(|r| r.mcs),
+            nss: rate.and_then(|r| r.nss),
+            width_mhz: c
+                .channel_width_mhz
+                .or_else(|| rate.and_then(|r| r.width_mhz)),
+        }
+    }
+
+    /// Roamed: both sides connected with known, different BSSIDs. A lost
+    /// link counts as roamed (the test didn't stay on one AP).
+    pub fn roamed_to(&self, after: Option<&LinkSnapshot>) -> Option<bool> {
+        let after = after?;
+        if !after.connected {
+            return Some(self.connected);
+        }
+        match (&self.bssid, &after.bssid) {
+            (Some(a), Some(b)) => Some(!a.eq_ignore_ascii_case(b)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PointTestKind {
+    Ping,
+    Iperf3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PointTestRole {
+    Gateway,
+    ExtraHost,
+    Iperf3Upload,
+    Iperf3Download,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PointTestMethod {
+    /// ICMP echo.
+    Icmp,
+    /// Timed TCP connects (ICMP not allowed).
+    TcpConnect,
+    /// iperf3 protocol over TCP.
+    Iperf3Tcp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PointTestStatus {
+    Ok,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewPointTest {
+    pub point_id: i64,
+    pub kind: PointTestKind,
+    pub target: String,
+    pub role: PointTestRole,
+    pub method: PointTestMethod,
+    pub status: PointTestStatus,
+    pub started_at: DateTime<Utc>,
+    pub duration_ms: i64,
+    pub adapter_id: AdapterId,
+    pub link: LinkSnapshot,
+    pub link_after: Option<LinkSnapshot>,
+    pub roamed: Option<bool>,
+    pub results: Option<PointTestResults>,
+    pub error: Option<String>,
+    pub error_hint: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct NewSurveyPoint {
     pub floor_id: i64,

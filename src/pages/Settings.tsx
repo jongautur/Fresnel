@@ -8,6 +8,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { KeyValueGrid, KV } from "../components/KeyValue";
 import { NumberInput } from "../components/NumberInput";
 import { BrandingSettings } from "../components/BrandingSettings";
+import { TestSettingsCard } from "../components/TestSettingsCard";
 
 export type Theme = "system" | "dark" | "light";
 
@@ -78,6 +79,7 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         </KeyValueGrid>
       </section>
       <BrandingSettings />
+      <TestSettingsCard />
       <section className="card">
         <header className="card-header"><h2>About</h2></header>
         {error && <div className="pad"><ErrorBanner error={error} compact /></div>}

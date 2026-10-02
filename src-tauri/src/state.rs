@@ -1,13 +1,16 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use fresnel_core::database::{Database, OpenError};
+use fresnel_core::nettools::Cancel;
 use fresnel_core::settings::SettingsStore;
 use fresnel_core::survey::floorplan::PlanStore;
 use fresnel_core::survey::photos::PhotoStore;
 use fresnel_core::wifi::scanner::Scanner;
 use fresnel_core::WifiError;
+use tokio::sync::watch;
 
 pub struct AppState {
     pub scanner: Scanner,
@@ -19,6 +22,10 @@ pub struct AppState {
     pub settings: Arc<SettingsStore>,
     /// The last file `save_export` wrote: the only path "Open" may open.
     pub last_export: Mutex<Option<PathBuf>>,
+    /// Running active tests by the UI's test ID. Cancelling is cooperative:
+    /// the tests check their token at every probe and data-loop boundary,
+    /// and every network phase has its own deadline anyway.
+    test_cancellations: Mutex<HashMap<String, watch::Sender<bool>>>,
     /// The app stays usable for live scanning even if the database can't be
     /// opened (e.g. read-only home); project commands then return the error.
     db: Mutex<DbSlot>,
@@ -59,6 +66,7 @@ impl AppState {
             photos,
             settings,
             last_export: Mutex::new(None),
+            test_cancellations: Mutex::new(HashMap::new()),
             db: Mutex::new(DbSlot { state, notice }),
         }
     }
@@ -93,6 +101,39 @@ impl AppState {
     pub fn db_notice(&self) -> Option<String> {
         let slot = self.db.lock().unwrap_or_else(|p| p.into_inner());
         slot.notice.clone()
+    }
+
+    /// Register a running test so `cancel_test` can stop it. One run at a
+    /// time: tests on one Wi-Fi link would disturb each other.
+    pub fn begin_test(&self, id: &str) -> Result<Cancel, WifiError> {
+        let mut tests = self
+            .test_cancellations
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if !tests.is_empty() {
+            return Err(WifiError::InvalidInput(
+                "other tests are still running; wait for them or cancel them".into(),
+            ));
+        }
+        let (sender, cancel) = Cancel::new();
+        tests.insert(id.to_owned(), sender);
+        Ok(cancel)
+    }
+
+    pub fn finish_test(&self, id: &str) {
+        self.test_cancellations
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(id);
+    }
+
+    /// False if no such test is running (it may just have finished).
+    pub fn cancel_test(&self, id: &str) -> bool {
+        self.test_cancellations
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(id)
+            .is_some_and(|tx| tx.send(true).is_ok())
     }
 }
 

@@ -4,6 +4,7 @@
 pub mod adapters;
 pub mod database;
 pub mod error;
+pub mod nettools;
 pub mod settings;
 pub mod survey;
 pub mod wifi;
