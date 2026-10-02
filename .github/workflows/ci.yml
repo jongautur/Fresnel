@@ -20,18 +20,12 @@ jobs:
   check:
     name: check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Windows is visible, not blocking, until it has proven itself: the
-    # Linux-only adapters are gated (plan step 1c), but that was never built
-    # on Windows before. Drop `experimental` once windows-latest is green.
-    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-22.04
-            experimental: false
           - os: windows-latest
-            experimental: true
     steps:
       - uses: actions/checkout@v7
 

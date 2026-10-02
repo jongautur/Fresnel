@@ -65,10 +65,6 @@ jobs:
   windows:
     needs: [version, check]
     runs-on: windows-latest
-    # Not blocking until the Windows build has proven itself (the Linux-only
-    # adapters are gated since plan step 1c). Remove once windows-latest is
-    # green; the release then waits for the installer.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
 
@@ -95,8 +91,6 @@ jobs:
 
   release:
     needs: [linux, windows]
-    # Runs when Windows failed (continue-on-error above), never without Linux.
-    if: ${{ !cancelled() && needs.linux.result == 'success' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write
