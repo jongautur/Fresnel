@@ -8,7 +8,8 @@ use std::time::Duration;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use super::models::{MeasuringAdapter, NewSurveyPoint, Sample, SurveyPoint};
+use super::findings::{AnomalyKind, PointAnomaly};
+use super::models::{AdapterBands, MeasuringAdapter, NewSurveyPoint, Sample, SurveyPoint};
 use crate::database::Database;
 use crate::error::{Result, WifiError};
 use crate::wifi::models::{Adapter, AdapterId, BusKind, ScanRequest, ScanResult};
@@ -51,7 +52,7 @@ pub async fn measure_here(
         blocking(move || preflight(&db, &req, &measuring)).await?;
     }
 
-    let (scan, samples) = fresh_scan(scanner, &req.adapter_id).await?;
+    let (scan, (samples, anomalies)) = fresh_scan(scanner, &req.adapter_id).await?;
     let window_ms = (scan.completed_at - scan.started_at).num_milliseconds();
     info!(
         floor = req.floor_id,
@@ -68,7 +69,11 @@ pub async fn measure_here(
         measured_at: scan.completed_at,
         scan_duration_ms: window_ms,
         adapter: measuring,
+        // What the card could receive, so a band it can't hear isn't
+        // reported as missing (requirement profiles).
+        adapter_bands: Some(AdapterBands::from_capabilities(&adapter.capabilities)),
         samples,
+        anomalies,
     };
     blocking(move || db.insert_survey_point(&new)).await
 }
@@ -160,7 +165,7 @@ fn measuring_adapter(a: &Adapter) -> MeasuringAdapter {
 
 /// A scan the hardware actually performed (never the backend's cache) that
 /// heard a plausible set of networks, plus the samples heard during it.
-async fn fresh_scan(scanner: &Scanner, adapter: &AdapterId) -> Result<(ScanResult, Vec<Sample>)> {
+async fn fresh_scan(scanner: &Scanner, adapter: &AdapterId) -> Result<(ScanResult, Readings)> {
     let request = ScanRequest {
         trigger: true,
         ssids: vec![],
@@ -179,13 +184,13 @@ async fn fresh_scan(scanner: &Scanner, adapter: &AdapterId) -> Result<(ScanResul
             continue;
         }
         let window_ms = (scan.completed_at - scan.started_at).num_milliseconds();
-        let samples = fresh_samples(&scan, window_ms)?;
-        if looks_incomplete(&scan, &samples) {
-            warn!(%adapter, attempt, heard = samples.len(), "scan heard only the associated AP; retrying");
+        let readings = fresh_samples(&scan, window_ms)?;
+        if looks_incomplete(&scan, &readings.0) {
+            warn!(%adapter, attempt, heard = readings.0.len(), "scan heard only the associated AP; retrying");
             problem = "the scan heard only the connected network although others were in range moments ago".into();
             continue;
         }
-        return Ok((scan, samples));
+        return Ok((scan, readings));
     }
     Err(WifiError::ScanRejected(format!(
         "no usable scan after {SCAN_ATTEMPTS} attempts ({problem}). Nothing was saved; try again."
@@ -213,10 +218,13 @@ fn looks_incomplete(scan: &ScanResult, fresh: &[Sample]) -> bool {
         .any(|ap| !ap.is_connected && ap.last_seen_age_ms.is_some_and(|a| a <= RECENTLY_HEARD_MS))
 }
 
+/// One sample per BSSID, plus the dropped readings worth keeping as findings.
+type Readings = (Vec<Sample>, Vec<PointAnomaly>);
+
 /// Keep only BSSes heard during the scan window. Backends remember BSSes for
 /// a while after they go quiet; those readings belong to wherever the
 /// surveyor was earlier, not to this point.
-fn fresh_samples(scan: &ScanResult, window_ms: i64) -> Result<Vec<Sample>> {
+fn fresh_samples(scan: &ScanResult, window_ms: i64) -> Result<Readings> {
     let aps = &scan.access_points;
     if !aps.is_empty() && aps.iter().all(|ap| ap.last_seen_age_ms.is_none()) {
         return Err(WifiError::Unsupported(
@@ -239,11 +247,15 @@ fn fresh_samples(scan: &ScanResult, window_ms: i64) -> Result<Vec<Sample>> {
 /// A point stores one sample per BSSID, but a scan can list a BSSID twice:
 /// a hidden network seen via its beacon (no SSID) and a probe response (real
 /// SSID), or one BSSID heard on two channels. Keep the most informative
-/// reading deliberately (see [`better_reading`]) and log the rest; order of
-/// first appearance is kept.
-fn one_per_bssid(samples: impl IntoIterator<Item = Sample>) -> Vec<Sample> {
+/// reading deliberately (see [`better_reading`]); order of first appearance
+/// is kept. A kept probe response stays marked hidden if the beacon was.
+/// Readings on another frequency than the kept one are returned as
+/// anomalies (a rogue-detection finding: two transmitters may be using one
+/// BSSID), at most one per frequency.
+fn one_per_bssid(samples: impl IntoIterator<Item = Sample>) -> Readings {
     let mut kept: Vec<Sample> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
+    let mut dropped_elsewhere: Vec<Sample> = Vec::new();
     for sample in samples {
         let Some(&i) = index.get(&sample.bssid) else {
             index.insert(sample.bssid.clone(), kept.len());
@@ -255,16 +267,15 @@ fn one_per_bssid(samples: impl IntoIterator<Item = Sample>) -> Vec<Sample> {
         } else {
             sample
         };
-        let winner = &kept[i];
+        let winner = &mut kept[i];
         if dropped.frequency_mhz != winner.frequency_mhz {
-            // TODO(plan 2c): a BSSID on two frequencies in one scan is a
-            // rogue-detection finding, not just a log line.
             warn!(
                 bssid = %winner.bssid,
                 kept_mhz = winner.frequency_mhz,
                 dropped_mhz = dropped.frequency_mhz,
-                "BSSID heard on two frequencies in one scan; keeping one reading"
+                "BSSID heard on two frequencies in one scan; keeping one reading, recording a finding"
             );
+            dropped_elsewhere.push(dropped);
         } else {
             info!(
                 bssid = %winner.bssid,
@@ -272,9 +283,32 @@ fn one_per_bssid(samples: impl IntoIterator<Item = Sample>) -> Vec<Sample> {
                 dropped_ssid = ?dropped.ssid,
                 "BSSID listed twice in one scan; keeping one reading"
             );
+            let was_hidden = dropped.detail.as_ref().is_some_and(|d| d.hidden);
+            if let Some(d) = winner.detail.as_mut() {
+                d.hidden |= was_hidden;
+            }
         }
     }
-    kept
+    // A reading dropped early may share the frequency of the final winner.
+    let mut anomalies: Vec<PointAnomaly> = Vec::new();
+    for d in dropped_elsewhere {
+        let winner = &kept[index[&d.bssid]];
+        let seen = anomalies
+            .iter()
+            .any(|a| a.bssid == d.bssid && a.frequency_mhz == d.frequency_mhz);
+        if d.frequency_mhz != winner.frequency_mhz && !seen {
+            anomalies.push(PointAnomaly {
+                bssid: d.bssid,
+                kind: AnomalyKind::MultiFrequency,
+                frequency_mhz: d.frequency_mhz,
+                channel: d.channel,
+                band: d.band,
+                ssid_raw: d.ssid_raw,
+                signal: d.signal,
+            });
+        }
+    }
+    (kept, anomalies)
 }
 
 /// Which of two readings of one BSSID to keep: a known SSID over a hidden
@@ -368,6 +402,7 @@ mod tests {
         ]);
         let kept: Vec<_> = fresh_samples(&s, 3000)
             .unwrap()
+            .0
             .into_iter()
             .map(|s| s.bssid)
             .collect();
@@ -377,7 +412,7 @@ mod tests {
     #[test]
     fn empty_scan_is_a_valid_dead_zone() {
         let s = scan(vec![]);
-        let fresh = fresh_samples(&s, 3000).unwrap();
+        let fresh = fresh_samples(&s, 3000).unwrap().0;
         assert!(fresh.is_empty());
         assert!(!looks_incomplete(&s, &fresh));
     }
@@ -393,16 +428,16 @@ mod tests {
             ap("X", Some(4139)),
             ap("Y", Some(5139)),
         ]);
-        let fresh = fresh_samples(&s, 1800).unwrap();
+        let fresh = fresh_samples(&s, 1800).unwrap().0;
         assert_eq!(fresh.len(), 1);
         assert!(looks_incomplete(&s, &fresh));
         // Others last heard long ago: a genuine dead zone (apart from the link).
         let s = scan(vec![connected, ap("X", Some(40_000))]);
-        let fresh = fresh_samples(&s, 1800).unwrap();
+        let fresh = fresh_samples(&s, 1800).unwrap().0;
         assert!(!looks_incomplete(&s, &fresh));
         // Heard others: fine.
         let s = scan(vec![ap("X", Some(100))]);
-        assert!(!looks_incomplete(&s, &fresh_samples(&s, 1800).unwrap()));
+        assert!(!looks_incomplete(&s, &fresh_samples(&s, 1800).unwrap().0));
     }
 
     #[test]
@@ -410,10 +445,10 @@ mod tests {
         let mut no_dbm = ap("Y", Some(300));
         no_dbm.signal = Signal::from_quality(60);
         let s = scan(vec![ap("X", Some(100)), no_dbm.clone()]);
-        assert!(looks_incomplete(&s, &fresh_samples(&s, 1800).unwrap()));
+        assert!(looks_incomplete(&s, &fresh_samples(&s, 1800).unwrap().0));
         // A %-only adapter is consistent, not incomplete.
         let s = scan(vec![no_dbm]);
-        assert!(!looks_incomplete(&s, &fresh_samples(&s, 1800).unwrap()));
+        assert!(!looks_incomplete(&s, &fresh_samples(&s, 1800).unwrap().0));
     }
 
     #[test]
@@ -450,7 +485,7 @@ mod tests {
             new_ch,
             strong,
         ]);
-        let kept = fresh_samples(&s, 3000).unwrap();
+        let (kept, anomalies) = fresh_samples(&s, 3000).unwrap();
         let summary: Vec<_> = kept
             .iter()
             .map(|s| {
@@ -471,6 +506,21 @@ mod tests {
                 ("T", Some("x"), 2437, Some(-70.0)),
                 ("S", Some("x"), 2412, Some(-60.0)),
             ]
+        );
+        // The beacon said hidden; the kept probe response keeps that.
+        assert!(kept[0].detail.as_ref().unwrap().hidden);
+        // T's other channel is a finding, not silently dropped.
+        assert_eq!(
+            anomalies,
+            [PointAnomaly {
+                bssid: "T".into(),
+                kind: AnomalyKind::MultiFrequency,
+                frequency_mhz: 2412,
+                channel: Some(1),
+                band: Band::Band2_4GHz,
+                ssid_raw: b"x".to_vec(),
+                signal: Signal::from_dbm(-40.0),
+            }]
         );
     }
 
@@ -615,6 +665,13 @@ mod tests {
             assert_eq!(point.scan_duration_ms, 3150);
             assert_eq!(point.adapter.id, FakeProvider::adapter_id("wlan0"));
             assert_eq!(point.adapter.provider, fake::PROVIDER_ID);
+            // The card's bands as it reported them (the fake knows none).
+            assert_eq!(
+                point.adapter_bands,
+                Some(AdapterBands::from_capabilities(
+                    &AdapterCapabilities::default()
+                ))
+            );
             assert_eq!(point.samples.len(), office.access_points.len());
             // Every reading stored as the provider reported it: nothing
             // converted, filled in or dropped.

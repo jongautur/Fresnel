@@ -5,8 +5,13 @@
 //! `tokio::task::spawn_blocking` (the Tauri command layer does).
 
 pub mod aps;
+pub mod findings;
+pub mod marks;
 mod migrations;
+pub mod notes;
+pub mod photos;
 pub mod projects;
+pub mod requirements;
 pub mod survey;
 
 use std::fmt;

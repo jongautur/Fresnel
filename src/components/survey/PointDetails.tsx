@@ -1,8 +1,11 @@
+import type { ReactNode } from "react";
 import type { SurveyPoint } from "../../types/survey";
 import { BAND_LABEL, formatDateTime, phyShort } from "../../lib/format";
 import { KeyValueGrid, KV } from "../KeyValue";
 import { SignalCell } from "../SignalCell";
 import { ConfirmButton } from "../ConfirmButton";
+import { NotesField } from "./NotesField";
+import { PhotoStrip } from "./PhotoStrip";
 
 export function PointDetails({
   point,
@@ -10,12 +13,15 @@ export function PointDetails({
   pxPerMetre,
   onDelete,
   apNameByBssid,
+  requirements,
 }: {
   point: SurveyPoint;
   number: number;
   pxPerMetre: number | null;
   onDelete: () => void;
   apNameByBssid?: Map<string, string>;
+  /** Pass/fail against the floor's requirement profile. */
+  requirements?: ReactNode;
 }) {
   const iface = point.adapter.id.split(":").slice(1).join(":") || point.adapter.id;
   return (
@@ -43,6 +49,11 @@ export function PointDetails({
           {point.samples.length} BSSID{point.samples.length === 1 ? "" : "s"}
         </KV>
       </KeyValueGrid>
+      {requirements}
+      <div className="panel-section">
+        <NotesField key={point.id} target={{ kind: "point", id: point.id }} />
+        <PhotoStrip floorId={point.floorId} target={{ kind: "point", id: point.id }} />
+      </div>
       {point.samples.length === 0 ? (
         <p className="muted pad">No networks were heard here.</p>
       ) : (

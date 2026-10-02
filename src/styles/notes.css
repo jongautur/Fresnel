@@ -1,0 +1,60 @@
+/* Notes, note pins and photos (survey). Uses the tokens in app.css. */
+
+:root {
+  /* On the plan image like the other markers, so not themed. Amber: apart
+     from the blue points and the categorical AP colours. */
+  --plan-pin: #e8a317;
+  --plan-pin-selected: #b35c00;
+}
+
+.notes-field { display: flex; flex-direction: column; }
+.notes-field-head { display: flex; align-items: baseline; gap: 8px; }
+.notes-status { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 11px; }
+.notes-status-saved { color: var(--ok); }
+.notes-status-dirty { color: var(--muted); }
+.notes-status-error, .notes-error { color: var(--bad); }
+.input.notes-textarea { width: 100%; resize: vertical; min-height: 44px; font: inherit; line-height: 1.4; padding: 6px 8px; height: auto; }
+.notes-warn { color: var(--warn); margin: 0; }
+
+/* Note pins on the plan */
+.plan-canvas.mode-pins { cursor: crosshair; }
+.plan-pin path { fill: var(--plan-pin); stroke: #fff; stroke-width: 1.5; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45)); }
+.plan-pin .plan-pin-dot { fill: #fff; }
+.plan-pin.hovered path { stroke-width: 2.5; }
+.plan-pin.selected path { fill: var(--plan-pin-selected); stroke-width: 2.5; }
+.plan-pin.pending path { fill: rgba(232, 163, 23, 0.25); stroke: #111; stroke-dasharray: 3 2; }
+.plan-pin-tooltip { white-space: normal; max-width: 280px; }
+.pin-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--plan-pin); margin: 0 4px 0 2px; flex-shrink: 0; }
+
+/* Photo strip */
+.photo-strip { display: flex; flex-direction: column; gap: 6px; }
+.photo-strip p { margin: 0; }
+.photo-tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+.photo-thumb, .photo-add {
+  position: relative; width: 72px; height: 72px; padding: 0; overflow: hidden;
+  border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-elev-2); cursor: pointer;
+}
+.photo-thumb:hover, .photo-add:hover:not(:disabled) { border-color: var(--accent); }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-thumb.excluded img { opacity: 0.45; }
+.photo-thumb-loading { display: block; width: 100%; height: 100%; }
+.photo-badge {
+  position: absolute; right: 3px; bottom: 3px; padding: 0 4px; border-radius: 4px;
+  font: 600 9px var(--font-mono); background: rgba(0, 0, 0, 0.65); color: #fff;
+}
+.photo-add { color: var(--muted); font: inherit; font-size: 11px; line-height: 1.2; padding: 4px; }
+
+/* Viewer */
+.photo-viewer {
+  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.7); padding: 24px;
+}
+.photo-viewer-body {
+  display: flex; gap: 16px; max-width: min(1200px, 100%); max-height: 100%; padding: 14px;
+  background: var(--bg-elev); border: 1px solid var(--border-strong); border-radius: var(--radius);
+}
+.photo-viewer-image { display: flex; align-items: center; justify-content: center; min-width: 200px; min-height: 200px; }
+.photo-viewer-image img { max-width: min(800px, 60vw); max-height: calc(100vh - 80px); object-fit: contain; display: block; }
+.photo-viewer-side { width: 260px; display: flex; flex-direction: column; gap: 10px; }
+.photo-viewer-side p { margin: 0; }
+.input.photo-caption { width: 100%; }

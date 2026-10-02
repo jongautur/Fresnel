@@ -28,3 +28,5 @@ chrono.workspace = true
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
+# Makes a real JPEG for the photo IPC test.
+image.workspace = true

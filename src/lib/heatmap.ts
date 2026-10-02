@@ -10,7 +10,7 @@
 import type { Band } from "../types/wifi";
 import type { FloorPlan, PlacedAp, Sample, SurveyPoint } from "../types/survey";
 
-export type HeatMetric = "signal" | "coverage" | "overlap" | "serving";
+export type HeatMetric = "signal" | "coverage" | "overlap" | "serving" | "requirements";
 
 export type NetworkFilter =
   | { kind: "any" }
@@ -35,8 +35,8 @@ export const INFLUENCE_M = 3;
 /** Without a scale: fraction of the plan's longest side. */
 const INFLUENCE_UNSCALED = 0.15;
 const IDW_POWER = 2;
-const OPACITY = 0.68;
-const MAX_CELLS = 250_000;
+export const OPACITY = 0.68;
+export const MAX_CELLS = 250_000;
 
 // Sequential blue ramp, steps 100 → 700 (weak → strong). The heatmap sits on
 // the plan image, not the theme surface, so it does not change with the theme.

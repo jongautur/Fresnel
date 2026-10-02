@@ -9,7 +9,8 @@ use tauri::State;
 use super::with_db;
 use crate::state::AppState;
 
-/// Remove plan files no floor references any more (after cascading deletes).
+/// Remove plan files no floor references any more (after cascading deletes),
+/// and photo files of the photos those deletes took with them.
 /// Best effort: a failure only leaves an orphaned file for the next run.
 pub(crate) async fn collect_plan_garbage(state: &AppState) {
     let plans = state.plans.clone();
@@ -20,6 +21,7 @@ pub(crate) async fn collect_plan_garbage(state: &AppState) {
     {
         tracing::warn!(error = %e, "skipping floor plan clean-up");
     }
+    super::notes::collect_photo_garbage(state).await;
 }
 
 // --- Buildings ------------------------------------------------------------
@@ -166,7 +168,9 @@ pub async fn measure_here(
 
 #[tauri::command]
 pub async fn delete_survey_point(state: State<'_, AppState>, id: i64) -> Result<bool, WifiError> {
-    with_db(&state, move |db| db.delete_survey_point(id)).await
+    let deleted = with_db(&state, move |db| db.delete_survey_point(id)).await?;
+    super::notes::collect_photo_garbage(&state).await;
+    Ok(deleted)
 }
 
 // --- Placed access points -------------------------------------------------
@@ -199,5 +203,7 @@ pub async fn update_placed_ap(
 
 #[tauri::command]
 pub async fn delete_placed_ap(state: State<'_, AppState>, id: i64) -> Result<bool, WifiError> {
-    with_db(&state, move |db| db.delete_placed_ap(id)).await
+    let deleted = with_db(&state, move |db| db.delete_placed_ap(id)).await?;
+    super::notes::collect_photo_garbage(&state).await;
+    Ok(deleted)
 }

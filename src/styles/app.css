@@ -533,6 +533,29 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .sample-ssid { max-width: 150px; overflow: hidden; text-overflow: ellipsis; color: var(--text-strong); }
 .sample-bssid { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 
+/* ---- Requirements ------------------------------------------------------ */
+.req-wide { width: 100%; min-width: 0; }
+.req-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; min-height: 30px; }
+.req-targets { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; padding: 4px 0; }
+.req-targets .checkbox { white-space: normal; }
+.req-targets .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.req-summary { display: flex; flex-direction: column; gap: 4px; }
+.req-summary strong { font-variant-numeric: tabular-nums; color: var(--text-strong); }
+.req-caveat { color: var(--warn); }
+.req-badge { font-size: 11.5px; padding: 1px 8px; border-radius: 8px; white-space: nowrap; }
+.req-badge.req-pass { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.req-badge.req-fail { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.req-badge.req-not_evaluated { color: var(--muted); background: var(--bg-hover); }
+.req-point { border-top: 1px solid var(--border); }
+.req-point-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.req-point-head .field-label { margin: 0; }
+.req-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.req-rules li { display: grid; grid-template-columns: 14px auto 1fr; gap: 6px; align-items: baseline; }
+.req-rules li.req-pass .req-mark { color: var(--ok); }
+.req-rules li.req-fail .req-mark, .req-rules li.req-fail .req-rule { color: var(--bad); }
+.req-rules li.req-not_evaluated .req-mark { color: var(--muted); }
+.req-rule { white-space: nowrap; }
+
 /* ---- Misc -------------------------------------------------------------- */
 .spin { animation: spin 1.1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -540,3 +563,25 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Findings (rogue / evil-twin detection) */
+.plan-point.flagged circle:not(.halo) { fill: var(--warn); }
+.plan-point.flagged .halo { stroke: #111; stroke-width: 2; }
+.finding-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.finding { border-top: 1px solid var(--border); }
+.finding-head { width: 100%; display: flex; align-items: flex-start; gap: 8px; padding: 8px 14px; border: 0; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.finding-head:hover, .finding.open .finding-head { background: var(--bg-hover); }
+.finding-head .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.finding-title { font-weight: 600; overflow-wrap: anywhere; }
+.severity-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: var(--muted); }
+.severity-dot.warning { background: var(--warn); }
+.finding-detail { padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+.finding-detail p { margin: 0; user-select: text; }
+.finding-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+.finding-facts dt { color: var(--muted); }
+.finding-facts dd { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.finding-refs, .finding-limits, .mark-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.mark-list { list-style: none; padding: 0; }
+.mark-list li { display: flex; align-items: center; gap: 8px; }
+.mark-list .grow { flex: 1; min-width: 0; }
+.finding-ours { display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--border); padding-top: 8px; }

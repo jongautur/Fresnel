@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { api, asApiError } from "../../api/tauri";
 import { useWifi } from "../../state/WifiContext";
 import type { ApiError, Band } from "../../types/wifi";
+import type { FloorRequirements } from "../../types/requirements";
 import {
   pxPerMetre,
   type Floor,
@@ -15,8 +16,12 @@ import { ErrorBanner, NoticeBanner } from "../ErrorBanner";
 import { IconRadar } from "../Icons";
 import { PlanCanvas, type ApMarker, type CanvasMode, type PlanXY } from "./PlanCanvas";
 import { ApEditor } from "./ApEditor";
+import { NotesPanel } from "./NotesPanel";
+import type { NotePin } from "../../types/notes";
+import { FindingsPanel } from "./FindingsPanel";
 import { PointDetails } from "./PointDetails";
 import { BANDS, HeatmapControls, METRICS, THRESHOLD_MAX, THRESHOLD_MIN } from "./HeatmapControls";
+import { PointRequirements, RequirementsLegend, RequirementsPanel } from "./RequirementsPanel";
 import {
   NOT_HEARD_DBM,
   apColor,
@@ -35,6 +40,7 @@ import {
   type HeatmapConfig,
   type NetworkFilter,
 } from "../../lib/heatmap";
+import { areaInputs, buildRequirementsGrid, outcomeMark, requirementsAt } from "../../lib/requirements";
 
 // ---------------------------------------------------------------------------
 // Plan file reading
@@ -182,6 +188,16 @@ export function FloorWorkspace({
   const [allAps, setAllAps] = useState<PlacedAp[]>([]);
   const [selectedApId, setSelectedApId] = useState<number | null>(null);
   const [pendingAp, setPendingAp] = useState<PlanXY | null>(null);
+  const [requirements, setRequirements] = useState<FloorRequirements | null>(null);
+  const [requirementsRev, setRequirementsRev] = useState(0);
+  const [profileLevels, setProfileLevels] = useState<{ coverage: number; overlap: number } | null>(null);
+  const [pins, setPins] = useState<NotePin[]>([]);
+  const [selectedPinId, setSelectedPinId] = useState<number | null>(null);
+  const [pendingPin, setPendingPin] = useState<PlanXY | null>(null);
+  // Findings: side panel, points to highlight, BSSIDs to prefill in the AP editor.
+  const [showFindings, setShowFindings] = useState(false);
+  const [flagged, setFlagged] = useState<Map<number, string> | null>(null);
+  const [apPrefill, setApPrefill] = useState<string[]>([]);
   const setHeat = (patch: Partial<HeatPrefs>) =>
     setHeatPrefsState((h) => {
       const next = { ...h, ...patch };
@@ -204,6 +220,16 @@ export function FloorWorkspace({
       .catch((e) => setError(asApiError(e)));
   }, [floor.id]);
 
+  // Note pins
+  useEffect(() => {
+    setSelectedPinId(null);
+    setPendingPin(null);
+    api
+      .listNotePins(floor.id)
+      .then(setPins)
+      .catch((e) => setError(asApiError(e)));
+  }, [floor.id]);
+
   // Access points: the whole building's (names resolve across floors)
   useEffect(() => {
     api
@@ -211,6 +237,29 @@ export function FloorWorkspace({
       .then(setAllAps)
       .catch((e) => setError(asApiError(e)));
   }, [floor.buildingId]);
+
+  // Requirements: re-evaluated in Rust whenever points, APs or profiles change.
+  useEffect(() => {
+    let cancelled = false;
+    api.evaluateFloorRequirements(floor.id).then(
+      (r) => !cancelled && setRequirements(r),
+      (e) => !cancelled && setError(asApiError(e)),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [floor.id, points, allAps, requirementsRev]);
+  const reqProfile = requirements?.profile ?? null;
+  // Coverage and overlap levels start at the profile's while one applies.
+  const profileKey = reqProfile ? `${reqProfile.id}@${reqProfile.updatedAt}` : null;
+  useEffect(() => {
+    setProfileLevels(
+      reqProfile
+        ? { coverage: reqProfile.primaryMinDbm, overlap: reqProfile.secondaryMinDbm ?? reqProfile.primaryMinDbm }
+        : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileKey]);
 
   // Plan image → blob URL
   const planFile = plan?.file;
@@ -289,6 +338,12 @@ export function FloorWorkspace({
     }
   };
 
+  // Reload findings whenever points or AP links change.
+  const findingsRev = useMemo(
+    () => JSON.stringify([points.map((p) => p.id), allAps.map((a) => [a.id, a.bssids])]),
+    [points, allAps],
+  );
+
   // --- Heatmap -------------------------------------------------------------
 
   const networks = useMemo(() => floorNetworks(points), [points]);
@@ -305,12 +360,18 @@ export function FloorWorkspace({
     return ap ? { kind: "ap", apId: ap.id, bssids: ap.bssids } : defaultNetwork;
   })();
   const servable = coloredAps.filter(({ ap }) => ap.bssids.length > 0);
-  const metric: HeatMetric = heatPrefs.metric === "serving" && servable.length === 0 ? "signal" : heatPrefs.metric;
+  const metric: HeatMetric =
+    (heatPrefs.metric === "serving" && servable.length === 0) || (heatPrefs.metric === "requirements" && !reqProfile)
+      ? "signal"
+      : heatPrefs.metric;
   const heatCfg: HeatmapConfig = {
     metric,
     network: resolvedNetwork,
     band: heatPrefs.band,
-    threshold: metric === "overlap" || metric === "serving" ? heatPrefs.overlap : heatPrefs.coverage,
+    threshold:
+      metric === "overlap" || metric === "serving"
+        ? (profileLevels?.overlap ?? heatPrefs.overlap)
+        : (profileLevels?.coverage ?? heatPrefs.coverage),
   };
   const heatActive = heatPrefs.on && mode !== "scale" && plan != null && points.length > 0;
   const cfgKey = JSON.stringify(heatCfg);
@@ -328,13 +389,21 @@ export function FloorWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [metric, points, coloredAps, heatPrefs.band],
   );
+  // Requirements area estimate: also feeds the floor summary, so built whether or not it is shown.
+  const reqInputs = useMemo(
+    () => (requirements?.profile ? areaInputs(points, requirements.points, requirements.profile) : null),
+    [requirements, points],
+  );
+  const reqGrid = useMemo(() => (plan && reqInputs ? buildRequirementsGrid(plan, ppm, reqInputs) : null), [plan, ppm, reqInputs]);
+  const reqEval = (id: number) => requirements?.points.find((e) => e.pointId === id);
   const heatGrid = useMemo((): HeatGrid | ServingGrid | null => {
     if (!heatActive || !plan) return null;
+    if (metric === "requirements") return reqGrid;
     return metric === "serving"
       ? buildServingGrid(plan, ppm, serving, heatCfg.threshold)
       : buildGrid(plan, ppm, heatPoints, heatCfg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heatActive, plan, ppm, heatPoints, serving, cfgKey]);
+  }, [heatActive, plan, ppm, heatPoints, serving, reqGrid, cfgKey]);
   const fmtValue = (v: number) =>
     heatCfg.metric === "overlap"
       ? `${Math.round(v)} AP${Math.round(v) === 1 ? "" : "s"}`
@@ -344,6 +413,10 @@ export function FloorWorkspace({
   const pointLabels = useMemo(() => {
     if (!heatActive) return undefined;
     const m = new Map<number, string>();
+    if (metric === "requirements") {
+      for (const p of points) m.set(p.id, outcomeMark(reqEval(p.id)));
+      return m;
+    }
     if (metric === "serving") {
       // The strongest reading from any placed AP at each point.
       const placed = new Set(servable.flatMap(({ ap }) => ap.bssids));
@@ -359,9 +432,14 @@ export function FloorWorkspace({
       m.set(h.id, heatCfg.metric === "overlap" ? String(h.v) : h.v <= NOT_HEARD_DBM ? "—" : String(Math.round(h.v)));
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heatActive, heatPoints, cfgKey]);
+  }, [heatActive, heatPoints, requirements, cfgKey]);
   const hoverInfo = (p: PlanXY) => {
     if (!heatActive || !plan) return null;
+    if (metric === "requirements") {
+      const e = reqInputs && requirementsAt(reqInputs, p.x, p.y, influenceRadiusPx(plan, ppm));
+      if (!e) return "no estimate (too far from points)";
+      return e.pass ? "≈ meets the profile (estimate)" : `≈ fails: ${e.failing.join(", ")} (estimate)`;
+    }
     if (metric === "serving") {
       const e = servingAt(serving, p.x, p.y, influenceRadiusPx(plan, ppm));
       if (!e) return "no estimate (too far from points)";
@@ -472,6 +550,12 @@ export function FloorWorkspace({
   };
 
   const onPlanClick = (p: PlanXY) => {
+    if (mode === "pins") {
+      setPendingPin(p);
+      setSelectedPinId(null);
+      return;
+    }
+    if (showFindings && mode === "measure") return;
     if (mode === "aps") {
       setPendingAp(p);
       setSelectedApId(null);
@@ -508,6 +592,8 @@ export function FloorWorkspace({
         e.preventDefault();
         void measureRef.current();
       } else if (e.key === "Escape" && !measuring) {
+        setPendingPin(null);
+        setSelectedPinId(null);
         setPendingAp(null);
         setSelectedApId(null);
         setPending(null);
@@ -608,6 +694,20 @@ export function FloorWorkspace({
           <button
             type="button"
             role="tab"
+            aria-selected={mode === "pins"}
+            disabled={measuring}
+            className={mode === "pins" ? "active" : ""}
+            onClick={() => {
+              setMode("pins");
+              setPending(null);
+              setSelectedId(null);
+            }}
+          >
+            Notes
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={mode === "scale"}
             disabled={measuring}
             className={mode === "scale" ? "active" : ""}
@@ -628,6 +728,19 @@ export function FloorWorkspace({
           title={points.length === 0 ? "Measure some points first" : "Show an interpolated heatmap over the plan"}
         >
           Heatmap
+        </button>
+        <button
+          type="button"
+          className={`btn ${showFindings ? "btn-toggled" : ""}`}
+          aria-pressed={showFindings}
+          onClick={() => {
+            setShowFindings(!showFindings);
+            setMode("measure");
+            setPending(null);
+          }}
+          title="Unknown transmitters, security mismatches and other rogue-AP findings"
+        >
+          Findings
         </button>
         {fileButton}
         <div className="workspace-meta">
@@ -651,15 +764,24 @@ export function FloorWorkspace({
           scale={mode === "scale" ? { a: scaleA, b: scaleB, label: scaleLabel } : null}
           pxPerMetre={ppm}
           heat={heatGrid}
-          pointLabels={pointLabels}
+          pointLabels={showFindings && mode === "measure" && flagged ? flagged : pointLabels}
+          highlightIds={showFindings && mode === "measure" && flagged ? new Set(flagged.keys()) : null}
           aps={apMarkers}
           selectedApId={selectedApId}
           pendingAp={pendingAp}
           onApClick={(id) => {
             setSelectedApId(id);
             setPendingAp(null);
+            setApPrefill([]);
           }}
           onApMove={moveAp}
+          pins={pins}
+          selectedPinId={selectedPinId}
+          pendingPin={pendingPin}
+          onPinClick={(id) => {
+            setSelectedPinId(id);
+            setPendingPin(null);
+          }}
           hoverInfo={heatActive ? hoverInfo : undefined}
           onPlanClick={onPlanClick}
           onPointClick={(id) => {
@@ -671,10 +793,21 @@ export function FloorWorkspace({
         />
 
         <aside className="survey-panel">
-          {mode === "aps" ? (
+          {mode === "pins" ? (
+            <NotesPanel
+              floor={floor}
+              pins={pins}
+              setPins={setPins}
+              selectedPinId={selectedPinId}
+              setSelectedPinId={setSelectedPinId}
+              pendingPin={pendingPin}
+              setPendingPin={setPendingPin}
+            />
+          ) : mode === "aps" ? (
             pendingAp || selectedAp ? (
               <ApEditor
-                key={selectedAp ? `ap-${selectedAp.id}` : `new-${pendingAp!.x}-${pendingAp!.y}`}
+                key={`${selectedAp ? `ap-${selectedAp.id}` : `new-${pendingAp!.x}-${pendingAp!.y}`}-${apPrefill.join()}`}
+                addBssids={apPrefill}
                 ap={selectedAp}
                 position={selectedAp ? { x: selectedAp.x, y: selectedAp.y } : pendingAp!}
                 points={points}
@@ -688,13 +821,18 @@ export function FloorWorkspace({
                 }
                 onSave={async (input) => {
                   const ok = await saveAp(input, selectedAp?.id ?? null);
-                  if (ok) setSelectedApId(null);
+                  if (ok) {
+                    setSelectedApId(null);
+                    setApPrefill([]);
+                  }
                   return ok;
                 }}
                 onDelete={selectedAp ? () => void removeAp(selectedAp.id) : undefined}
+                onNotesSaved={(id, notes) => setAllAps((aps) => aps.map((a) => (a.id === id ? { ...a, notes } : a)))}
                 onCancel={() => {
                   setPendingAp(null);
                   setSelectedApId(null);
+                  setApPrefill([]);
                 }}
               />
             ) : (
@@ -706,6 +844,11 @@ export function FloorWorkspace({
                 </header>
                 <div className="panel-section">
                   <p>Click the plan where an access point is mounted.</p>
+                  {apPrefill.length > 0 && (
+                    <p className="small">
+                      From Findings: <span className="mono">{apPrefill.join(", ")}</span> will be linked to it.
+                    </p>
+                  )}
                   <p className="muted small">
                     Link the BSSIDs it broadcasts, and its name shows up in readings and the heatmap (per-AP and
                     serving-AP views). Drag a marker to move it.
@@ -779,6 +922,25 @@ export function FloorWorkspace({
                 </div>
               </div>
             </section>
+          ) : showFindings ? (
+            <FindingsPanel
+              floor={floor}
+              revision={findingsRev}
+              floorAps={floorAps.map(({ ap }) => ap)}
+              onHighlight={setFlagged}
+              onPlaceAp={(bssids, at) => {
+                setApPrefill(bssids);
+                setSelectedApId(null);
+                setPendingAp(at);
+                setMode("aps");
+              }}
+              onEditAp={(id, bssids) => {
+                setApPrefill(bssids);
+                setPendingAp(null);
+                setSelectedApId(id);
+                setMode("aps");
+              }}
+            />
           ) : (
             <>
               {heatActive && (
@@ -790,7 +952,11 @@ export function FloorWorkspace({
                   band={heatPrefs.band}
                   setBand={(band) => setHeat({ band })}
                   threshold={heatCfg.threshold}
-                  setThreshold={(t) => setHeat(metric === "coverage" ? { coverage: t } : { overlap: t })}
+                  setThreshold={(t) => {
+                    const patch = metric === "coverage" ? { coverage: t } : { overlap: t };
+                    if (profileLevels) setProfileLevels({ ...profileLevels, ...patch });
+                    else setHeat(patch);
+                  }}
                   networks={networks}
                   passingFraction={heatGrid?.passingFraction ?? null}
                   usedPoints={heatPoints.length}
@@ -801,6 +967,15 @@ export function FloorWorkspace({
                     heatGrid && "shares" in heatGrid ? { shares: heatGrid.shares, unserved: heatGrid.unserved } : null
                   }
                   apNameByBssid={apNameByBssid}
+                  requirementsLegend={
+                    reqProfile ? (
+                      <RequirementsLegend
+                        profile={reqProfile}
+                        areaFraction={reqGrid?.passingFraction ?? null}
+                        pointFraction={requirements?.summary?.passFractionOfPoints ?? null}
+                      />
+                    ) : null
+                  }
                 />
               )}
               {heatActive && heatPoints.length === 0 && (
@@ -867,6 +1042,11 @@ export function FloorWorkspace({
                   number={points.indexOf(selected) + 1}
                   pxPerMetre={ppm}
                   onDelete={() => void removePoint(selected.id)}
+                  requirements={
+                    reqProfile && reqEval(selected.id) ? (
+                      <PointRequirements evaluation={reqEval(selected.id)!} profileName={reqProfile.name} />
+                    ) : undefined
+                  }
                 />
               ) : (
                 <section className="card">
@@ -887,6 +1067,12 @@ export function FloorWorkspace({
                   </div>
                 </section>
               )}
+              <RequirementsPanel
+                requirements={requirements}
+                areaFraction={reqGrid?.passingFraction ?? null}
+                onRequirements={setRequirements}
+                onProfilesChanged={() => setRequirementsRev((n) => n + 1)}
+              />
             </>
           )}
         </aside>

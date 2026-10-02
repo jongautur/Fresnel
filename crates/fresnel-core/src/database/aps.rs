@@ -97,6 +97,7 @@ fn validate(input: &PlacedApInput, plan: &FloorPlan) -> Result<(String, Vec<Stri
             "the access point needs a name".into(),
         ));
     }
+    super::notes::clean_note(input.notes.as_deref())?;
     if !(input.x.is_finite() && input.y.is_finite())
         || input.x < 0.0
         || input.y < 0.0
@@ -154,7 +155,7 @@ fn write_bssids(conn: &Connection, ap_id: i64, bssids: &[String]) -> Result<()> 
     Ok(())
 }
 
-fn query(conn: &Connection, filter: &str, id: i64) -> Result<Vec<PlacedAp>> {
+pub(super) fn query(conn: &Connection, filter: &str, id: i64) -> Result<Vec<PlacedAp>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {COLUMNS} FROM placed_aps a JOIN floors f ON f.id = a.floor_id WHERE {filter} ORDER BY a.id"
     ))?;
@@ -177,7 +178,7 @@ fn query(conn: &Connection, filter: &str, id: i64) -> Result<Vec<PlacedAp>> {
     Ok(aps)
 }
 
-fn touch(conn: &Connection, floor_id: i64, now: &str) -> Result<()> {
+pub(super) fn touch(conn: &Connection, floor_id: i64, now: &str) -> Result<()> {
     conn.execute(
         "UPDATE floors SET updated_at = ?2 WHERE id = ?1",
         params![floor_id, now],

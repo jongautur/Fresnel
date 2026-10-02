@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use fresnel_core::database::{Database, OpenError};
 use fresnel_core::survey::floorplan::PlanStore;
+use fresnel_core::survey::photos::PhotoStore;
 use fresnel_core::wifi::scanner::Scanner;
 use fresnel_core::WifiError;
 
@@ -12,6 +13,7 @@ pub struct AppState {
     pub data_dir: PathBuf,
     pub db_path: PathBuf,
     pub plans: Arc<PlanStore>,
+    pub photos: Arc<PhotoStore>,
     /// The app stays usable for live scanning even if the database can't be
     /// opened (e.g. read-only home); project commands then return the error.
     db: Mutex<DbSlot>,
@@ -36,16 +38,19 @@ impl AppState {
     pub fn new(data_dir: PathBuf) -> Self {
         let db_path = data_dir.join("fresnel.db");
         let plans_dir = data_dir.join("floorplans");
-        let (state, notice) = open_or_recover(&db_path, &plans_dir);
+        let photos_dir = data_dir.join("photos");
+        let (state, notice) = open_or_recover(&db_path, &[&plans_dir, &photos_dir]);
         let plans = Arc::new(PlanStore::new(plans_dir));
+        let photos = Arc::new(PhotoStore::new(photos_dir));
         if let DbState::Ready(db) = &state {
-            collect_plan_garbage(db, &plans);
+            collect_garbage(db, &plans, &photos);
         }
         Self {
             scanner: Scanner::new(Arc::new(fresnel_core::default_registry())),
             data_dir,
             db_path,
             plans,
+            photos,
             db: Mutex::new(DbSlot { state, notice }),
         }
     }
@@ -61,9 +66,10 @@ impl AppState {
             DbState::Retry(_) => {}
         }
         tracing::info!(path = %self.db_path.display(), "retrying to open the database");
-        let (state, notice) = open_or_recover(&self.db_path, self.plans.dir());
+        let (state, notice) =
+            open_or_recover(&self.db_path, &[self.plans.dir(), self.photos.dir()]);
         if let DbState::Ready(db) = &state {
-            collect_plan_garbage(db, &self.plans);
+            collect_garbage(db, &self.plans, &self.photos);
         }
         if notice.is_some() {
             slot.notice = notice;
@@ -82,16 +88,21 @@ impl AppState {
     }
 }
 
-fn collect_plan_garbage(db: &Database, plans: &PlanStore) {
+fn collect_garbage(db: &Database, plans: &PlanStore, photos: &PhotoStore) {
     if let Err(e) = plans.collect_garbage(|| db.referenced_plan_files()) {
         tracing::warn!(error = %e, "skipping floor plan clean-up");
     }
+    if let Err(e) = photos.collect_garbage(|| db.referenced_photo_files()) {
+        tracing::warn!(error = %e, "skipping photo clean-up");
+    }
 }
 
-fn open_or_recover(db_path: &Path, plans_dir: &Path) -> (DbState, Option<String>) {
+/// `file_dirs`: the directories of files the database references (plans,
+/// photos); they are set aside with a damaged database.
+fn open_or_recover(db_path: &Path, file_dirs: &[&Path]) -> (DbState, Option<String>) {
     match Database::open_checked(db_path) {
         Ok(db) => (DbState::Ready(Arc::new(db)), None),
-        Err(OpenError::Corrupt(detail)) => recover_corrupt(db_path, plans_dir, &detail),
+        Err(OpenError::Corrupt(detail)) => recover_corrupt(db_path, file_dirs, &detail),
         Err(e) if e.is_transient() => {
             tracing::warn!(path = %db_path.display(), error = %e, "database busy; will retry");
             (DbState::Retry(e.into()), None)
@@ -107,7 +118,7 @@ fn open_or_recover(db_path: &Path, plans_dir: &Path) -> (DbState, Option<String>
 /// floor plans it references) aside as `<name>.corrupt-{timestamp}` and
 /// start a fresh one. Nothing is deleted: the old file can still be
 /// recovered with `sqlite3 ... .recover`.
-fn recover_corrupt(db_path: &Path, plans_dir: &Path, detail: &str) -> (DbState, Option<String>) {
+fn recover_corrupt(db_path: &Path, file_dirs: &[&Path], detail: &str) -> (DbState, Option<String>) {
     tracing::error!(
         path = %db_path.display(),
         %detail,
@@ -124,21 +135,25 @@ fn recover_corrupt(db_path: &Path, plans_dir: &Path, detail: &str) -> (DbState, 
         (DbState::Failed(WifiError::Database(msg)), None)
     };
 
-    // Plans first: a new database references none, so plan garbage
-    // collection would delete every plan file the damaged one still needs.
+    // Plans and photos first: a new database references none, so garbage
+    // collection would delete every file the damaged one still needs.
     // Never start a new database while they are still in place.
-    let mut plans_aside = None;
-    if plans_dir.exists() {
-        let target = with_suffix(plans_dir, &format!(".corrupt-{stamp}"));
-        if let Err(e) = std::fs::rename(plans_dir, &target) {
-            return fail(format!("its floor plans could not be moved aside: {e}"));
+    let mut moved: Vec<(&Path, PathBuf)> = Vec::new();
+    let put_back = |moved: &[(&Path, PathBuf)]| {
+        for (dir, target) in moved {
+            let _ = std::fs::rename(target, dir);
         }
-        plans_aside = Some(target);
+    };
+    for dir in file_dirs.iter().copied().filter(|d| d.exists()) {
+        let target = with_suffix(dir, &format!(".corrupt-{stamp}"));
+        if let Err(e) = std::fs::rename(dir, &target) {
+            put_back(&moved);
+            return fail(format!("{} could not be moved aside: {e}", dir.display()));
+        }
+        moved.push((dir, target));
     }
     if let Err(e) = std::fs::rename(db_path, &aside) {
-        if let Some(target) = &plans_aside {
-            let _ = std::fs::rename(target, plans_dir);
-        }
+        put_back(&moved);
         return fail(format!("could not be moved aside: {e}"));
     }
     // SQLite pairs `<db>-wal` with `<db>`, so the set-aside copy keeps its
@@ -153,12 +168,13 @@ fn recover_corrupt(db_path: &Path, plans_dir: &Path, detail: &str) -> (DbState, 
         }
     }
 
-    let plans_note = plans_aside
-        .map(|p| format!(", its floor plans as {}", p.display()))
-        .unwrap_or_default();
+    let files_note: String = moved
+        .iter()
+        .map(|(_, p)| format!(", {}", p.display()))
+        .collect();
     let notice = format!(
-        "Fresnel's database was damaged ({detail}). It was set aside as {}{plans_note}, \
-         and a new, empty database was started.",
+        "Fresnel's database was damaged ({detail}). It was set aside as {}{files_note} \
+         (its floor plans and photos), and a new, empty database was started.",
         aside.display()
     );
     tracing::error!("{notice}");
@@ -196,6 +212,8 @@ mod tests {
         std::fs::write(dir.join("fresnel.db"), &garbage).unwrap();
         std::fs::create_dir_all(dir.join("floorplans")).unwrap();
         std::fs::write(dir.join("floorplans/plan-1.png"), b"png").unwrap();
+        std::fs::create_dir_all(dir.join("photos")).unwrap();
+        std::fs::write(dir.join("photos/photo-1.jpg"), b"jpg").unwrap();
 
         let state = AppState::new(dir.clone());
         let db = state.db().expect("a fresh database");
@@ -220,6 +238,11 @@ mod tests {
             .find(|n| n.starts_with("floorplans.corrupt-"))
             .expect("plans set aside");
         assert!(dir.join(plans).join("plan-1.png").exists());
+        let photos = names
+            .iter()
+            .find(|n| n.starts_with("photos.corrupt-"))
+            .expect("photos set aside");
+        assert!(dir.join(photos).join("photo-1.jpg").exists());
 
         drop((db, state));
         let _ = std::fs::remove_dir_all(dir);

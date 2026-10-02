@@ -37,6 +37,31 @@ macro_rules! app_commands {
             commands::survey::create_placed_ap,
             commands::survey::update_placed_ap,
             commands::survey::delete_placed_ap,
+            commands::requirements::requirement_presets,
+            commands::requirements::list_requirement_profiles,
+            commands::requirements::create_requirement_profile,
+            commands::requirements::update_requirement_profile,
+            commands::requirements::delete_requirement_profile,
+            commands::requirements::set_requirement_targets,
+            commands::requirements::requirement_target_options,
+            commands::requirements::set_floor_requirement_profile,
+            commands::requirements::evaluate_floor_requirements,
+            commands::notes::get_notes,
+            commands::notes::set_notes,
+            commands::notes::list_note_pins,
+            commands::notes::create_note_pin,
+            commands::notes::update_note_pin,
+            commands::notes::delete_note_pin,
+            commands::notes::import_photo,
+            commands::notes::list_floor_photos,
+            commands::notes::photo_thumbnail,
+            commands::notes::photo_report_image,
+            commands::notes::update_photo,
+            commands::notes::delete_photo,
+            commands::findings::survey_findings,
+            commands::findings::set_bssid_mark,
+            commands::findings::clear_bssid_mark,
+            commands::findings::bssid_link_options,
         ]
     };
 }
@@ -194,6 +219,190 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err["kind"], "invalid_input");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Requirement profiles: flattened values and tagged targets survive the
+    /// JSON round trip the UI uses.
+    #[test]
+    fn requirement_profiles_over_ipc() {
+        let dir = std::env::temp_dir().join(format!("fresnel-ipc-req-{}", std::process::id()));
+        let state = AppState::new(dir.clone());
+        let db = state.db().unwrap();
+        let project = db
+            .create_project(&NewProject {
+                name: "P".into(),
+                customer_name: None,
+            })
+            .unwrap();
+        let app = mock_builder()
+            .manage(state)
+            .invoke_handler(app_commands!())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let call = |cmd: &str, args: serde_json::Value| {
+            get_ipc_response(
+                &webview,
+                request(cmd, InvokeBody::Json(args), HeaderMap::new()),
+            )
+            .map(|r| r.deserialize::<serde_json::Value>().unwrap())
+        };
+
+        let presets = call("requirement_presets", serde_json::json!({})).unwrap();
+        let office = presets
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["preset"] == "office_data")
+            .unwrap();
+        let mut input = office["values"].clone();
+        input["name"] = "Office".into();
+        input["preset"] = "office_data".into();
+        let profile = call(
+            "create_requirement_profile",
+            serde_json::json!({ "projectId": project.id, "profile": input }),
+        )
+        .unwrap();
+        assert_eq!(profile["primaryMinDbm"], -67);
+        assert_eq!(profile["requiredBands"], serde_json::json!(["5ghz"]));
+        assert_eq!(profile["isDefault"], true);
+
+        let profile = call(
+            "set_requirement_targets",
+            serde_json::json!({
+                "profileId": profile["id"],
+                "targets": [{ "kind": "ssid", "ssidRaw": [67, 111, 114, 112] }],
+            }),
+        )
+        .unwrap();
+        assert_eq!(profile["targets"][0]["label"], "Corp");
+
+        let err = call(
+            "set_requirement_targets",
+            serde_json::json!({ "profileId": profile["id"], "targets": [{ "kind": "ap", "apId": 99 }] }),
+        )
+        .unwrap_err();
+        assert_eq!(err["kind"], "invalid_input");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn photo_upload_thumbnail_and_delete_over_ipc() {
+        let dir = std::env::temp_dir().join(format!("fresnel-ipc-photo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let state = AppState::new(dir.clone());
+        let db = state.db().unwrap();
+        let project = db
+            .create_project(&NewProject {
+                name: "P".into(),
+                customer_name: None,
+            })
+            .unwrap();
+        let building = db
+            .create_building(&NewBuilding {
+                project_id: project.id,
+                name: "B".into(),
+            })
+            .unwrap();
+        let floor = db
+            .create_floor(&NewFloor {
+                building_id: building.id,
+                name: "F".into(),
+                level: 0,
+            })
+            .unwrap();
+
+        let app = mock_builder()
+            .manage(state)
+            .invoke_handler(app_commands!())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let invoke = |cmd: &str, body: InvokeBody, headers: HeaderMap| {
+            get_ipc_response(&webview, request(cmd, body, headers))
+        };
+
+        let mut jpeg = Vec::new();
+        image::RgbImage::from_pixel(640, 480, image::Rgb([200, 100, 50]))
+            .write_to(
+                &mut std::io::Cursor::new(&mut jpeg),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("x-photo-target", HeaderValue::from_static("floor"));
+        headers.insert("x-photo-target-id", HeaderValue::from(floor.id));
+        let photo = invoke(
+            "import_photo",
+            InvokeBody::Raw(jpeg.clone()),
+            headers.clone(),
+        )
+        .unwrap()
+        .deserialize::<serde_json::Value>()
+        .unwrap();
+        assert_eq!(
+            photo["target"],
+            serde_json::json!({ "kind": "floor", "id": floor.id })
+        );
+        assert_eq!(photo["width"], 640);
+        assert_eq!(photo["inReport"], true);
+        let id = photo["id"].as_i64().unwrap();
+
+        let photos_dir = dir.join("photos");
+        assert_eq!(std::fs::read_dir(&photos_dir).unwrap().count(), 3);
+        let original = std::fs::read(photos_dir.join(photo["file"].as_str().unwrap())).unwrap();
+        assert_eq!(original, jpeg);
+
+        for cmd in ["photo_thumbnail", "photo_report_image"] {
+            let body = invoke(
+                cmd,
+                InvokeBody::Json(serde_json::json!({ "id": id })),
+                HeaderMap::new(),
+            )
+            .unwrap();
+            match body {
+                InvokeResponseBody::Raw(bytes) => assert!(bytes.starts_with(&[0xFF, 0xD8, 0xFF])),
+                other => panic!("expected raw bytes, got {other:?}"),
+            }
+        }
+
+        let updated = invoke(
+            "update_photo",
+            InvokeBody::Json(
+                serde_json::json!({ "id": id, "caption": "Server room", "inReport": false }),
+            ),
+            HeaderMap::new(),
+        )
+        .unwrap()
+        .deserialize::<serde_json::Value>()
+        .unwrap();
+        assert_eq!(updated["caption"], "Server room");
+
+        // HEIC is refused with advice, not a decoder error.
+        let err = invoke(
+            "import_photo",
+            InvokeBody::Raw(b"\0\0\0\x18ftypheic\0\0\0\0mif1heic".to_vec()),
+            headers,
+        )
+        .unwrap_err();
+        assert_eq!(err["kind"], "invalid_input");
+        assert!(err["message"].as_str().unwrap().contains("JPEG"));
+
+        // Deleting the row removes all three files.
+        invoke(
+            "delete_photo",
+            InvokeBody::Json(serde_json::json!({ "id": id })),
+            HeaderMap::new(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_dir(&photos_dir).unwrap().count(), 0);
 
         let _ = std::fs::remove_dir_all(dir);
     }

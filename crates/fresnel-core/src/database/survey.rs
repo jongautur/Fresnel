@@ -26,14 +26,14 @@ fn non_empty<'a>(s: &'a str, what: &str) -> Result<&'a str> {
 }
 
 /// Serde name of a unit enum (`Band::Band5GHz` → "5ghz"), for TEXT columns.
-fn enum_text<T: Serialize>(v: &T) -> String {
+pub(super) fn enum_text<T: Serialize>(v: &T) -> String {
     match serde_json::to_value(v) {
         Ok(serde_json::Value::String(s)) => s,
         _ => "unknown".into(),
     }
 }
 
-fn enum_parse<T: DeserializeOwned>(s: &str, fallback: T) -> T {
+pub(super) fn enum_parse<T: DeserializeOwned>(s: &str, fallback: T) -> T {
     serde_json::from_value(serde_json::Value::String(s.to_owned())).unwrap_or(fallback)
 }
 
@@ -164,7 +164,7 @@ fn floor_from_row(r: &Row<'_>) -> rusqlite::Result<Floor> {
 }
 
 const POINT_COLUMNS: &str = "id, floor_id, x, y, measured_at, scan_duration_ms,
-    provider, adapter_id, adapter_model, adapter_driver, adapter_hw_id";
+    provider, adapter_id, adapter_model, adapter_driver, adapter_hw_id, adapter_bands";
 
 fn point_from_row(r: &Row<'_>) -> rusqlite::Result<SurveyPoint> {
     Ok(SurveyPoint {
@@ -181,7 +181,18 @@ fn point_from_row(r: &Row<'_>) -> rusqlite::Result<SurveyPoint> {
             driver: r.get(9)?,
             hw_id: r.get(10)?,
         },
+        adapter_bands: adapter_bands_from_row(r, 11)?,
         samples: Vec::new(),
+    })
+}
+
+/// JSON TEXT column → [`AdapterBands`]; NULL = not recorded.
+fn adapter_bands_from_row(r: &Row<'_>, idx: usize) -> rusqlite::Result<Option<AdapterBands>> {
+    let Some(text) = r.get::<_, Option<String>>(idx)? else {
+        return Ok(None);
+    };
+    serde_json::from_str(&text).map(Some).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, Box::new(e))
     })
 }
 
@@ -189,7 +200,8 @@ const SAMPLE_COLUMNS: &str = "s.point_id, s.bssid, s.ssid, s.ssid_raw, s.frequen
     s.channel, s.band, s.channel_width_mhz, s.channel_center_mhz, s.signal_dbm,
     s.signal_percent, s.security, s.phy_type, s.wifi_generation, s.noise_dbm,
     s.snr_db, s.channel_utilization_pct, s.station_count, s.last_seen_age_ms,
-    s.is_connected";
+    s.is_connected, s.akms, s.pairwise, s.group_cipher, s.group_mgmt_cipher, s.pmf,
+    s.hidden, s.mld_addr";
 
 /// Strongest first: dBm readings by dBm, then %-only readings by %.
 const SAMPLE_ORDER: &str =
@@ -222,8 +234,37 @@ fn sample_from_row(r: &Row<'_>) -> rusqlite::Result<(i64, Sample)> {
             station_count: r.get(17)?,
             last_seen_age_ms: r.get::<_, Option<i64>>(18)?.map(|v| v.max(0) as u64),
             is_connected: r.get(19)?,
+            detail: detail_from_row(r, 20)?,
         },
     ))
+}
+
+/// Columns `first..first + 7` (akms … mld_addr). `hidden` is set on every
+/// row since schema v6; NULL means the detail wasn't recorded. A JSON value
+/// that doesn't parse (written by a newer Fresnel) reads as empty / unknown.
+fn detail_from_row(r: &Row<'_>, first: usize) -> rusqlite::Result<Option<SampleDetail>> {
+    let Some(hidden) = r.get::<_, Option<bool>>(first + 5)? else {
+        return Ok(None);
+    };
+    fn json<T: DeserializeOwned + Default>(s: Option<String>) -> T {
+        s.and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+    Ok(Some(SampleDetail {
+        akms: json(r.get(first)?),
+        pairwise_ciphers: json(r.get(first + 1)?),
+        group_ciphers: json(r.get(first + 2)?),
+        group_mgmt_cipher: json(r.get(first + 3)?),
+        pmf: r
+            .get::<_, Option<String>>(first + 4)?
+            .and_then(|p| serde_json::from_value(serde_json::Value::String(p)).ok()),
+        hidden,
+        mld_address: r.get(first + 6)?,
+    }))
+}
+
+fn json_text<T: Serialize>(v: &T) -> Option<String> {
+    serde_json::to_string(v).ok()
 }
 
 fn get_floor(conn: &Connection, id: i64) -> Result<Option<Floor>> {
@@ -242,7 +283,7 @@ fn require_floor(conn: &Connection, id: i64) -> Result<Floor> {
 }
 
 /// Points matching `filter` (an SQL condition on `p`), samples attached.
-fn query_points(conn: &Connection, filter: &str, id: i64) -> Result<Vec<SurveyPoint>> {
+pub(super) fn query_points(conn: &Connection, filter: &str, id: i64) -> Result<Vec<SurveyPoint>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {POINT_COLUMNS} FROM survey_points p WHERE {filter} ORDER BY measured_at, id"
     ))?;
@@ -472,8 +513,8 @@ impl Database {
 
         tx.execute(
             "INSERT INTO survey_points (floor_id, x, y, measured_at, scan_duration_ms, provider,
-                 adapter_id, adapter_model, adapter_driver, adapter_hw_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 adapter_id, adapter_model, adapter_driver, adapter_hw_id, adapter_bands)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 new.floor_id,
                 new.x,
@@ -485,16 +526,22 @@ impl Database {
                 new.adapter.model,
                 new.adapter.driver,
                 new.adapter.hw_id,
+                new.adapter_bands
+                    .map(|b| serde_json::to_string(&b))
+                    .transpose()
+                    .map_err(|e| WifiError::Database(e.to_string()))?,
             ],
         )?;
         let point_id = tx.last_insert_rowid();
         {
             let mut stmt = tx.prepare(&format!(
                 "INSERT INTO survey_samples ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                     ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                     ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                     ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
                 SAMPLE_COLUMNS.replace("s.", "")
             ))?;
             for s in &new.samples {
+                let d = s.detail.as_ref();
                 stmt.execute(params![
                     point_id,
                     s.bssid,
@@ -516,9 +563,17 @@ impl Database {
                     s.station_count,
                     s.last_seen_age_ms.map(|v| v.min(i64::MAX as u64) as i64),
                     s.is_connected,
+                    d.map(|d| json_text(&d.akms)),
+                    d.map(|d| json_text(&d.pairwise_ciphers)),
+                    d.map(|d| json_text(&d.group_ciphers)),
+                    d.and_then(|d| d.group_mgmt_cipher.as_ref().and_then(json_text)),
+                    d.and_then(|d| d.pmf.as_ref().map(enum_text)),
+                    d.map(|d| d.hidden),
+                    d.and_then(|d| d.mld_address.as_deref()),
                 ])?;
             }
         }
+        super::findings::insert_anomalies(&tx, point_id, &new.anomalies)?;
         touch_floor(&tx, new.floor_id, &new.measured_at.to_rfc3339())?;
         let point = query_points(&tx, "p.id = ?1", point_id)?
             .pop()
@@ -577,6 +632,7 @@ impl Database {
 mod tests {
     use super::*;
     use crate::database::projects::NewProject;
+    use crate::wifi::models::Capability;
 
     fn floor_with_plan(db: &Database) -> Floor {
         let p = db
@@ -634,6 +690,7 @@ mod tests {
             station_count: Some(3),
             last_seen_age_ms: Some(800),
             is_connected: false,
+            detail: None,
         }
     }
 
@@ -662,6 +719,12 @@ mod tests {
                 measured_at: Utc::now(),
                 scan_duration_ms: 3100,
                 adapter: adapter(),
+                adapter_bands: Some(AdapterBands {
+                    band_2ghz: Capability::Supported,
+                    band_5ghz: Capability::Supported,
+                    band_6ghz: Capability::Unsupported,
+                }),
+                anomalies: vec![],
                 samples: vec![
                     sample("AA:00:00:00:00:02", None, Some(40)),
                     sample("AA:00:00:00:00:01", Some(-61.0), Some(70)),
@@ -682,6 +745,10 @@ mod tests {
         assert_eq!(point.samples[0].band, Band::Band5GHz);
         assert_eq!(point.samples[0].security, SecurityKind::Wpa2Wpa3Personal);
         assert_eq!(point.adapter, adapter());
+        assert_eq!(
+            point.adapter_bands.unwrap().get(Band::Band6GHz),
+            Capability::Unsupported
+        );
 
         let listed = db.list_survey_points(floor.id).unwrap();
         assert_eq!(listed, vec![point.clone()]);
@@ -720,6 +787,8 @@ mod tests {
             measured_at: Utc::now(),
             scan_duration_ms: 3000,
             adapter: adapter(),
+            adapter_bands: None,
+            anomalies: vec![],
             samples: vec![
                 sample("AA:00:00:00:00:01", Some(-50.0), None),
                 other_channel,
@@ -743,6 +812,8 @@ mod tests {
                 measured_at: Utc::now(),
                 scan_duration_ms: 0,
                 adapter: adapter(),
+                adapter_bands: None,
+                anomalies: vec![],
                 samples: vec![],
             })
             .unwrap_err();

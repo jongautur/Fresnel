@@ -2,8 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Keyboar
 import type { FloorPlan, SurveyPoint } from "../../types/survey";
 import type { HeatGrid } from "../../lib/heatmap";
 import { formatTime } from "../../lib/format";
+import { NotePinMarkers, PinTooltip, pinAt, type PinMarker } from "./NotePinLayer";
 
-export type CanvasMode = "measure" | "aps" | "scale";
+export type CanvasMode = "measure" | "aps" | "pins" | "scale";
 
 export interface ApMarker {
   id: number;
@@ -89,12 +90,17 @@ export function PlanCanvas({
   pxPerMetre,
   heat,
   pointLabels,
+  highlightIds = null,
   hoverInfo,
   aps = [],
   selectedApId = null,
   pendingAp = null,
   onApClick,
   onApMove,
+  pins = [],
+  selectedPinId = null,
+  pendingPin = null,
+  onPinClick,
   onPlanClick,
   onPointClick,
 }: {
@@ -111,6 +117,8 @@ export function PlanCanvas({
   heat?: HeatGrid | null;
   /** Value shown beside each point marker (heatmap mode). */
   pointLabels?: Map<number, string>;
+  /** Points to emphasise (others are dimmed), e.g. where a finding was heard. */
+  highlightIds?: Set<number> | null;
   /** Extra hover readout for a plan position (e.g. the estimated value). */
   hoverInfo?: (p: PlanXY) => string | null;
   /** Access points placed on this floor. */
@@ -121,6 +129,13 @@ export function PlanCanvas({
   onApClick?: (id: number) => void;
   /** Drag-to-move finished (Place APs mode). */
   onApMove?: (id: number, p: PlanXY) => void;
+  /** Note pins on this floor (hover shows their text). */
+  pins?: PinMarker[];
+  selectedPinId?: number | null;
+  /** Position of a note pin being placed. */
+  pendingPin?: PlanXY | null;
+  /** A pin was clicked (Notes mode). */
+  onPinClick?: (id: number) => void;
   onPlanClick: (p: PlanXY) => void;
   onPointClick: (id: number) => void;
 }) {
@@ -128,6 +143,7 @@ export function PlanCanvas({
   const [view, setView] = useState<View | null>(null);
   const [hover, setHover] = useState<{ sx: number; sy: number; plan: PlanXY } | null>(null);
   const [hoverPoint, setHoverPoint] = useState<number | null>(null);
+  const [hoverPin, setHoverPin] = useState<number | null>(null);
   const [panning, setPanning] = useState(false);
   const drag = useRef<{ sx: number; sy: number; view: View; moved: boolean; id: number; apId?: number } | null>(null);
   const [apDrag, setApDrag] = useState<{ id: number; x: number; y: number } | null>(null);
@@ -259,6 +275,7 @@ export function PlanCanvas({
     const p = toPlan(sx, sy);
     setHover(onPlan(p) ? { sx, sy, plan: p } : null);
     setHoverPoint(pointAt(sx, sy));
+    setHoverPin(mode !== "scale" ? pinAt(pins, toScreen, sx, sy) : null);
   };
 
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
@@ -276,6 +293,11 @@ export function PlanCanvas({
     const hit = mode === "measure" ? pointAt(sx, sy) : null;
     if (hit != null) {
       onPointClick(hit);
+      return;
+    }
+    const pinHit = mode === "pins" ? pinAt(pins, toScreen, sx, sy) : null;
+    if (pinHit != null) {
+      onPinClick?.(pinHit);
       return;
     }
     const p = toPlan(sx, sy);
@@ -345,6 +367,7 @@ export function PlanCanvas({
       onPointerLeave={() => {
         setHover(null);
         setHoverPoint(null);
+        setHoverPin(null);
       }}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
@@ -403,7 +426,8 @@ export function PlanCanvas({
         {mode !== "scale" &&
           points.map((p, i) => {
             const s = toScreen(p);
-            const cls = `plan-point ${heat ? "heat" : ""} ${mode === "aps" ? "dim" : ""} ${p.id === selectedId ? "selected" : ""} ${p.id === hoverPoint && mode === "measure" ? "hovered" : ""}`;
+            const flag = highlightIds ? (highlightIds.has(p.id) ? "flagged" : "dim") : "";
+            const cls = `plan-point ${heat ? "heat" : ""} ${mode === "aps" ? "dim" : flag} ${p.id === selectedId ? "selected" : ""} ${p.id === hoverPoint && mode === "measure" ? "hovered" : ""}`;
             const label = pointLabels?.get(p.id);
             return (
               <g key={p.id} className={cls}>
@@ -450,6 +474,17 @@ export function PlanCanvas({
           </g>
         )}
 
+        {/* Note pins */}
+        {mode !== "scale" && (
+          <NotePinMarkers
+            pins={pins}
+            toScreen={toScreen}
+            selectedId={selectedPinId}
+            hoveredId={hoverPin}
+            pending={mode === "pins" ? pendingPin : null}
+          />
+        )}
+
         {/* Position awaiting "Measure here" */}
         {mode === "measure" && pending && (
           <g className={`plan-pending ${measuring ? "measuring" : ""}`}>
@@ -466,6 +501,10 @@ export function PlanCanvas({
           </g>
         )}
       </svg>
+
+      {hoverPin != null && !hovered && pins.find((p) => p.id === hoverPin) && (
+        <PinTooltip pin={pins.find((p) => p.id === hoverPin)!} toScreen={toScreen} />
+      )}
 
       {hovered && (
         <div

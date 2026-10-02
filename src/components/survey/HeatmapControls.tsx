@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Band } from "../../types/wifi";
 import type { PlacedAp } from "../../types/survey";
 import { BAND_LABEL } from "../../lib/format";
@@ -19,6 +20,7 @@ export const METRICS: { id: HeatMetric; label: string; title: string }[] = [
   { id: "coverage", label: "Coverage", title: "Where the signal meets a target level" },
   { id: "overlap", label: "AP overlap", title: "How many APs are heard above a level: 2+ helps roaming" },
   { id: "serving", label: "Serving AP", title: "Which placed access point is strongest at each spot" },
+  { id: "requirements", label: "Requirements", title: "Where the floor's requirement profile is met" },
 ];
 
 export const BANDS: (Band | "all")[] = ["all", "2.4ghz", "5ghz", "6ghz"];
@@ -72,6 +74,7 @@ export function HeatmapControls({
   aps,
   servingShares,
   apNameByBssid,
+  requirementsLegend,
 }: {
   metric: HeatMetric;
   setMetric: (m: HeatMetric) => void;
@@ -91,6 +94,8 @@ export function HeatmapControls({
   /** Serving view: share of mapped area per AP id, and the unserved share. */
   servingShares: { shares: Map<number, number>; unserved: number } | null;
   apNameByBssid: Map<string, string>;
+  /** Legend for the Requirements view; null when no profile applies (view disabled). */
+  requirementsLegend: ReactNode | null;
 }) {
   const servable = aps.filter((a) => a.ap.bssids.length > 0);
   const [lo, hi] = SIGNAL_DOMAIN;
@@ -115,7 +120,7 @@ export function HeatmapControls({
               title={m.title}
               aria-selected={metric === m.id}
               className={metric === m.id ? "active" : ""}
-              disabled={m.id === "serving" && servable.length === 0}
+              disabled={(m.id === "serving" && servable.length === 0) || (m.id === "requirements" && !requirementsLegend)}
               onClick={() => setMetric(m.id)}
             >
               {m.label}
@@ -127,7 +132,7 @@ export function HeatmapControls({
           <p className="muted small">Place access points and link their BSSIDs to compare them.</p>
         )}
         <div className="heat-fields">
-          {metric !== "serving" && (
+          {metric !== "serving" && metric !== "requirements" && (
           <label>
             <span className="field-label">Network</span>
             <select
@@ -165,6 +170,7 @@ export function HeatmapControls({
             </select>
           </label>
           )}
+          {metric !== "requirements" && (
           <label>
             <span className="field-label">Band</span>
             <select className="input" value={band} onChange={(e) => setBand(e.target.value as Band | "all")}>
@@ -175,7 +181,8 @@ export function HeatmapControls({
               ))}
             </select>
           </label>
-          {metric !== "signal" && (
+          )}
+          {metric !== "signal" && metric !== "requirements" && (
             <label>
               <span className="field-label">
                 {metric === "coverage" ? "Target" : metric === "serving" ? "Serves from" : "AP counts at"}
@@ -238,6 +245,8 @@ export function HeatmapControls({
             </div>
           </div>
         )}
+
+        {metric === "requirements" && requirementsLegend}
 
         {metric === "serving" && servingShares && (
           <div className="heat-legend">

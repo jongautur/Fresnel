@@ -3,6 +3,9 @@ import type { PlacedAp, PlacedApInput, SurveyPoint } from "../../types/survey";
 import { BAND_LABEL } from "../../lib/format";
 import { apKey, suggestBssidGroup } from "../../lib/heatmap";
 import { ConfirmButton } from "../ConfirmButton";
+import { MAX_NOTE_CHARS } from "../../types/notes";
+import { NotesField } from "./NotesField";
+import { PhotoStrip } from "./PhotoStrip";
 
 interface BssidRow {
   bssid: string;
@@ -31,6 +34,8 @@ export function ApEditor({
   onSave,
   onDelete,
   onCancel,
+  onNotesSaved,
+  addBssids = [],
 }: {
   /** null = new AP at `position`. */
   ap: PlacedAp | null;
@@ -44,6 +49,10 @@ export function ApEditor({
   onSave: (input: PlacedApInput) => Promise<boolean>;
   onDelete?: () => void;
   onCancel: () => void;
+  /** An existing AP's notes were saved on their own (on blur). */
+  onNotesSaved?: (id: number, notes: string | null) => void;
+  /** BSSIDs to link as well (a finding's "this is ours"); replaces the suggestion for a new AP. */
+  addBssids?: string[];
 }) {
   const claimedBy = useMemo(() => {
     const m = new Map<string, string>();
@@ -55,14 +64,19 @@ export function ApEditor({
   const [model, setModel] = useState(ap?.model ?? "");
   const [notes, setNotes] = useState(ap?.notes ?? "");
   const [manual, setManual] = useState("");
-  const [extra, setExtra] = useState<string[]>([]);
+  const [extra, setExtra] = useState<string[]>(addBssids);
   const suggested = useMemo(
-    () => (ap ? [] : suggestBssidGroup(points, position.x, position.y, suggestRadiusPx, new Set(claimedBy.keys()))),
+    () =>
+      ap || addBssids.length > 0
+        ? []
+        : suggestBssidGroup(points, position.x, position.y, suggestRadiusPx, new Set(claimedBy.keys())),
     // Only for a new AP, computed once per placement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(ap?.bssids ?? suggested));
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set([...(ap?.bssids ?? suggested), ...addBssids.filter((b) => !claimedBy.has(b))]),
+  );
   const [busy, setBusy] = useState(false);
 
   // Every BSSID heard on this floor, plus ones already linked or typed in.
@@ -159,10 +173,30 @@ export function ApEditor({
             <span className="field-label">Model (optional)</span>
             <input className="input ap-input" value={model} placeholder="e.g. Ubiquiti U6 Lite" onChange={(e) => setModel(e.target.value)} />
           </label>
-          <label>
-            <span className="field-label">Notes (optional)</span>
-            <input className="input ap-input" value={notes} placeholder="e.g. ceiling, 2.6 m" onChange={(e) => setNotes(e.target.value)} />
-          </label>
+          {ap ? (
+            // Saved on blur; Save writes the same text with the rest.
+            <NotesField
+              target={{ kind: "ap", id: ap.id }}
+              initial={ap.notes}
+              label="Notes (optional)"
+              placeholder="e.g. ceiling, 2.6 m"
+              rows={2}
+              onChange={setNotes}
+              onSaved={(n) => onNotesSaved?.(ap.id, n)}
+            />
+          ) : (
+            <label>
+              <span className="field-label">Notes (optional)</span>
+              <textarea
+                className="input ap-input notes-textarea"
+                rows={2}
+                value={notes}
+                maxLength={MAX_NOTE_CHARS}
+                placeholder="e.g. ceiling, 2.6 m"
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </label>
+          )}
         </div>
 
         <div>
@@ -241,6 +275,11 @@ export function ApEditor({
           {ap && <span className="muted small">Drag the marker to move it.</span>}
         </div>
       </form>
+      {ap && (
+        <div className="panel-section">
+          <PhotoStrip floorId={ap.floorId} target={{ kind: "ap", id: ap.id }} />
+        </div>
+      )}
     </section>
   );
 }

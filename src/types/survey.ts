@@ -1,5 +1,6 @@
 // Mirrors fresnel-core survey/models.rs (camelCase).
-import type { AdapterId, Band, SecurityKind, Signal } from "./wifi";
+import type { AdapterId, Akm, Band, Cipher, Pmf, SecurityKind, Signal } from "./wifi";
+import type { AdapterBands } from "./requirements";
 
 export interface Building {
   id: number;
@@ -75,6 +76,18 @@ export interface Sample {
   stationCount: number | null;
   lastSeenAgeMs: number | null;
   isConnected: boolean;
+  /** null: measured before security detail was recorded. */
+  detail: SampleDetail | null;
+}
+
+export interface SampleDetail {
+  akms: Akm[];
+  pairwiseCiphers: Cipher[];
+  groupCiphers: Cipher[];
+  groupMgmtCipher: Cipher | null;
+  pmf: Pmf | null;
+  hidden: boolean;
+  mldAddress: string | null;
 }
 
 export interface SurveyPoint {
@@ -85,6 +98,8 @@ export interface SurveyPoint {
   measuredAt: string;
   scanDurationMs: number;
   adapter: MeasuringAdapter;
+  /** null on points measured before this was recorded. */
+  adapterBands: AdapterBands | null;
   /** Strongest first. */
   samples: Sample[];
 }

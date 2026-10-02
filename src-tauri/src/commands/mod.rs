@@ -4,7 +4,10 @@
 pub mod adapters;
 pub mod app;
 pub mod diagnostics;
+pub mod findings;
+pub mod notes;
 pub mod projects;
+pub mod requirements;
 pub mod survey;
 pub mod wifi;
 

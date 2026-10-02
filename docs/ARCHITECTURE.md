@@ -33,13 +33,17 @@ wifi-tool/
 │       │   │   └── scanner.rs    # Scanner service (scan orchestration, provider-agnostic)
 │       │   ├── survey/
 │       │   │   ├── models.rs     # Building / Floor / FloorPlan / FloorScale / SurveyPoint / Sample
-│       │   │   ├── floorplan.rs  # PlanStore: validated plan image files in the app data dir
+│       │   │   ├── filestore.rs  # FileStore: validated files + locked import/GC (plans, photos)
+│       │   │   ├── floorplan.rs  # PlanStore: plan images (FileStore, prefix plan-)
+│       │   │   ├── photos.rs     # PhotoStore: photo import, report copy + thumbnail
 │       │   │   └── measure.rs    # Measure Here: fresh-scan orchestration + freshness filter
 │       │   └── database/
 │       │       ├── mod.rs        # Database handle (rusqlite)
 │       │       ├── migrations.rs # Versioned migrations (PRAGMA user_version)
 │       │       ├── projects.rs   # Project repository
-│       │       └── survey.rs     # Buildings, floors, points, samples
+│       │       ├── survey.rs     # Buildings, floors, points, samples
+│       │       ├── notes.rs      # Notes, note pins, per-floor annotations for reports
+│       │       └── photos.rs     # Photo rows
 │       └── examples/
 │           └── probe.rs          # CLI: list adapters + scan against real hardware
 ├── src-tauri/                    # Thin Tauri shell
@@ -106,6 +110,8 @@ error's `hint` (see below), so the UI stays provider-neutral.
 | `tracing` / `tracing-subscriber` | structured logging (`RUST_LOG=fresnel_core=debug`) |
 | `chrono` | UTC timestamps |
 | `futures` | concurrent property fetches |
+| `image` 0.25 (jpeg, png, webp only) | photo decode with memory limits, EXIF orientation, resize, JPEG re-encode; pure Rust |
+| `kamadak-exif` 0.6 | EXIF capture time and GPS presence (pure Rust, no deps beyond one tiny crate) |
 
 Deliberately **not** used: the `networkmanager` crate (dbus-rs/libdbus based,
 stale), `tauri-plugin-sql` (would expose raw SQL to the webview; the DB stays
@@ -234,6 +240,45 @@ projects ─< buildings ─< floors ─< survey_points ─< survey_samples
   BSSIDs as one network) and "serving AP" (IDW per AP, strongest wins; below
   the level counts as unserved). An AP's colour is its categorical slot by
   building order, never its rank.
+* **Requirements profiles** (migration v4: `requirement_profiles`,
+  `requirement_profile_targets`, `floors.requirement_profile_id`,
+  `survey_points.adapter_bands`; `survey/requirements.rs`,
+  `database/requirements.rs`): project-level thresholds (presets from common
+  vendor guidance, or custom), targets by SSID bytes or placed AP, one
+  default per project, a whole-profile override per floor. Rust judges each
+  point pass / fail (which rules) / not evaluated (why): primary = strongest
+  target BSSID; secondary = another physical AP (placed APs, else the
+  `apKey` heuristic, flagged) on the primary's SSID and band; co-channel =
+  distinct other radios whose span (centre ± width/2, else the 20 MHz
+  primary channel, flagged) overlaps the primary's, at or above the level;
+  a required band is only "missing" if the card could receive it
+  (`adapter_bands`, or anything heard on it); SNR and BSS-Load utilisation
+  only where reported; %-only points are never failed. The UI estimates the
+  share of mapped area with the coverage grid (`src/lib/requirements.ts`)
+  and always labels which share is of points and which of area.
+* **Notes and photos** (migration v5): free-text `notes` on floors, points
+  and placed APs (≤ 4000 characters, checked in Rust); `note_pins` (a note at
+  a plan position, optional category); `photos` attached to a floor or to one
+  point, AP or pin (cascading deletes). A photo import (JPEG/PNG/WebP sniffed
+  from content, ≤ 25 MB; HEIC/AVIF refused with "export as JPEG") decodes
+  under the image crate's limits (≤ 16 384 px a side, ≤ 120 MP, ≤ 512 MiB),
+  applies the EXIF orientation and writes three files under `photos/photo-*`:
+  the untouched original (evidence; keeps GPS and other metadata), a ≤ 1600 px
+  JPEG report copy and a ≤ 256 px thumbnail, both re-encoded from pixels so
+  they carry no metadata. `had_gps` and `taken_at` (EXIF `DateTimeOriginal`,
+  offset only if recorded) come from kamadak-exif. The app only ever shows
+  the copies. `Database::floor_annotations` gathers a floor's notes, pins and
+  in-report photos for the report.
+* **Rogue / evil-twin findings** (`survey::findings`, pure functions over
+  the stored project; migration v6: per-sample security detail, hidden flag
+  and MLD address, `point_anomalies`, `bssid_marks`): unknown transmitters
+  using a project SSID (one broadcast by a BSSID linked to a placed AP),
+  security mismatches per (SSID, band), one BSSID on two channels in one
+  scan, a linked BSSID heard with another SSID/security than usual, and
+  probable unlinked radios (same MLD address, else the `apKey` heuristic,
+  labelled). Ownership is decided project-wide; the scope (floor, building,
+  project) only limits the evidence. `Database::findings` is what the
+  report will use.
 * **One adapter per floor**: measuring with a different adapter (ID or hardware
   ID) than earlier points returns `adapter_mismatch`; the UI asks and retries
   with `allowAdapterChange`.
@@ -284,9 +329,12 @@ Access points are **never merged by SSID** in Rust. SSID grouping is a UI toggle
   provider call, provider lookup included, a 30 s deadline: the call is
   dropped and `Timeout` returned, so a wedged service can't hold the
   per-adapter lock until restart.
-* **Plan files.** `PlanStore` runs an import (write the file, then reference
-  it in the DB) and garbage collection (read the referenced set, then sweep)
-  under one lock, so a collection can't delete a plan mid-import.
+* **Plan and photo files.** `FileStore` (behind `PlanStore` and `PhotoStore`)
+  runs an import (write the files atomically, then reference them in the DB)
+  and garbage collection (read the referenced set, then sweep) under one
+  lock, so a collection can't delete files mid-import. Renames and deletes
+  are retried briefly on sharing violations (Windows antivirus). A damaged
+  database is set aside together with both directories.
 * **Database.** Opening runs `PRAGMA quick_check`. Before a schema upgrade the
   WAL is checkpointed and the DB copied with `VACUUM INTO` to
   `fresnel.db.bak-v{old}-{timestamp}` (newest 3 kept); if the backup fails,
