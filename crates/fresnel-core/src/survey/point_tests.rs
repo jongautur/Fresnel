@@ -174,7 +174,10 @@ fn plan(settings: &TestSettings, binding: &WifiBinding) -> Vec<Planned> {
             target: Some(host),
         });
     }
-    if let Some(server) = settings.iperf3_server_ip() {
+    if let Some(server) = settings
+        .iperf3_server_ip()
+        .filter(|_| settings.iperf3_in_point_tests)
+    {
         for direction in settings.iperf3_directions.list() {
             plan.push(Planned {
                 kind: PointTestKind::Iperf3,
@@ -322,6 +325,11 @@ mod tests {
             ..TestSettings::default()
         };
         let roles: Vec<_> = plan(&settings, &binding).iter().map(|p| p.role).collect();
+        let without_iperf3 = TestSettings {
+            iperf3_in_point_tests: false,
+            ..settings.clone()
+        };
+        assert_eq!(plan(&without_iperf3, &binding).len(), 2);
         assert_eq!(
             roles,
             [

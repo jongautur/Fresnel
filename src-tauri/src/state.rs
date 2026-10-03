@@ -26,9 +26,21 @@ pub struct AppState {
     /// the tests check their token at every probe and data-loop boundary,
     /// and every network phase has its own deadline anyway.
     test_cancellations: Mutex<HashMap<String, watch::Sender<bool>>>,
+    /// Running Tools page runs by the UI's run ID, and whether each is
+    /// bound to a Wi-Fi adapter (those don't overlap with point tests).
+    tool_runs: Mutex<HashMap<String, ToolSlot>>,
     /// The app stays usable for live scanning even if the database can't be
     /// opened (e.g. read-only home); project commands then return the error.
     db: Mutex<DbSlot>,
+}
+
+/// Most Tools runs at once (ping during iperf3 is useful; a dozen sweeps
+/// at once only disturb each other).
+pub const MAX_TOOL_RUNS: usize = 4;
+
+struct ToolSlot {
+    cancel: watch::Sender<bool>,
+    wifi_bound: bool,
 }
 
 struct DbSlot {
@@ -67,6 +79,7 @@ impl AppState {
             settings,
             last_export: Mutex::new(None),
             test_cancellations: Mutex::new(HashMap::new()),
+            tool_runs: Mutex::new(HashMap::new()),
             db: Mutex::new(DbSlot { state, notice }),
         }
     }
@@ -115,6 +128,13 @@ impl AppState {
                 "other tests are still running; wait for them or cancel them".into(),
             ));
         }
+        if self.tools().values().any(|t| t.wifi_bound) {
+            return Err(WifiError::InvalidInput(
+                "a Tools run bound to Wi-Fi is still running; stop it first, so it doesn't \
+                 disturb the point's tests"
+                    .into(),
+            ));
+        }
         let (sender, cancel) = Cancel::new();
         tests.insert(id.to_owned(), sender);
         Ok(cancel)
@@ -125,6 +145,55 @@ impl AppState {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .remove(id);
+    }
+
+    fn tools(&self) -> std::sync::MutexGuard<'_, HashMap<String, ToolSlot>> {
+        self.tool_runs.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Register a Tools run so `cancel_tool` can stop it.
+    pub fn begin_tool(&self, id: &str, wifi_bound: bool) -> Result<Cancel, WifiError> {
+        // Lock order: tests, then tools (as in `begin_test`).
+        let tests = self
+            .test_cancellations
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let mut tools = self.tools();
+        if tools.contains_key(id) {
+            return Err(WifiError::InvalidInput(format!(
+                "run {id} is already running"
+            )));
+        }
+        if tools.len() >= MAX_TOOL_RUNS {
+            return Err(WifiError::InvalidInput(format!(
+                "{MAX_TOOL_RUNS} tools are already running; stop one first"
+            )));
+        }
+        if wifi_bound && !tests.is_empty() {
+            return Err(WifiError::InvalidInput(
+                "a survey point's tests are running on Wi-Fi; wait for them first".into(),
+            ));
+        }
+        let (sender, cancel) = Cancel::new();
+        tools.insert(
+            id.to_owned(),
+            ToolSlot {
+                cancel: sender,
+                wifi_bound,
+            },
+        );
+        Ok(cancel)
+    }
+
+    pub fn finish_tool(&self, id: &str) {
+        self.tools().remove(id);
+    }
+
+    /// False if no such run is going (it may just have finished).
+    pub fn cancel_tool(&self, id: &str) -> bool {
+        self.tools()
+            .get(id)
+            .is_some_and(|t| t.cancel.send(true).is_ok())
     }
 
     /// False if no such test is running (it may just have finished).

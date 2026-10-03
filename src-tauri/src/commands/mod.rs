@@ -12,6 +12,7 @@ pub mod report;
 pub mod requirements;
 pub mod settings;
 pub mod survey;
+pub mod tools;
 pub mod wifi;
 
 use fresnel_core::database::Database;

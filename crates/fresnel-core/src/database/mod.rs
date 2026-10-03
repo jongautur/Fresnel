@@ -14,6 +14,7 @@ pub mod point_tests;
 pub mod projects;
 pub mod requirements;
 pub mod survey;
+pub mod tool_runs;
 
 use std::fmt;
 use std::path::{Path, PathBuf};

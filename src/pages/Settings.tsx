@@ -8,7 +8,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { KeyValueGrid, KV } from "../components/KeyValue";
 import { NumberInput } from "../components/NumberInput";
 import { BrandingSettings } from "../components/BrandingSettings";
-import { TestSettingsCard } from "../components/TestSettingsCard";
+import { Iperf3SettingsCard, TestSettingsCard } from "../components/TestSettingsCard";
 
 export type Theme = "system" | "dark" | "light";
 
@@ -79,6 +79,7 @@ export function Settings({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         </KeyValueGrid>
       </section>
       <BrandingSettings />
+      <Iperf3SettingsCard />
       <TestSettingsCard />
       <section className="card">
         <header className="card-header"><h2>About</h2></header>

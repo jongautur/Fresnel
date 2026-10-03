@@ -14,10 +14,14 @@
 //! / `Icmp6SendEcho2`).
 
 mod binding;
+pub mod dns;
 pub mod iperf3;
 pub mod ping;
+pub mod portcheck;
 pub mod route;
 pub mod settings;
+pub mod target;
+pub mod traceroute;
 #[cfg(windows)]
 mod windows;
 
@@ -31,6 +35,7 @@ pub use binding::{wifi_binding, WifiBinding};
 pub use iperf3::{Iperf3Config, Iperf3Direction, Iperf3Result};
 pub use ping::{PingConfig, PingResult, ProbeMethod, ProbeOutcome};
 pub use route::check_route;
+pub use target::{egress, resolve, Egress, IpFamily, ResolvedTarget};
 
 /// Connecting a TCP socket (control, data stream or TCP-connect probe).
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);

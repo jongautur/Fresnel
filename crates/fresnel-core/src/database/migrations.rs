@@ -302,6 +302,35 @@ fn all() -> Vec<M<'static>> {
             ) STRICT;
             CREATE INDEX idx_point_tests_point ON point_tests(point_id, started_at);",
         ),
+        // v8 — Tools page runs (ping, traceroute, DNS, port check, iperf3).
+        // Not tied to a project; a run can be attached to a survey point
+        // afterwards (deleting the point detaches it). Results are
+        // versioned JSON; params are what the UI sent, for "run again".
+        M::up(
+            "CREATE TABLE tool_runs (
+                id          INTEGER PRIMARY KEY,
+                kind        TEXT    NOT NULL
+                            CHECK (kind IN ('ping', 'traceroute', 'dns', 'port_check', 'iperf3')),
+                target      TEXT    NOT NULL,
+                resolved_ip TEXT,
+                params_json TEXT    NOT NULL CHECK (json_valid(params_json)),
+                status      TEXT    NOT NULL CHECK (status IN ('ok', 'failed', 'stopped')),
+                started_at  TEXT    NOT NULL,
+                duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+                route_iface TEXT,
+                adapter_id  TEXT,
+                link_json   TEXT CHECK (link_json IS NULL OR json_valid(link_json)),
+                link_after_json TEXT CHECK (link_after_json IS NULL OR json_valid(link_after_json)),
+                roamed      INTEGER CHECK (roamed IN (0, 1)),
+                summary     TEXT,
+                results_json TEXT CHECK (results_json IS NULL OR json_valid(results_json)),
+                error       TEXT,
+                error_hint  TEXT,
+                point_id    INTEGER REFERENCES survey_points(id) ON DELETE SET NULL
+            ) STRICT;
+            CREATE INDEX idx_tool_runs_kind ON tool_runs(kind, started_at);
+            CREATE INDEX idx_tool_runs_point ON tool_runs(point_id) WHERE point_id IS NOT NULL;",
+        ),
     ]
 }
 

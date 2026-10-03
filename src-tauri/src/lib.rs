@@ -75,6 +75,19 @@ macro_rules! app_commands {
             commands::findings::set_bssid_mark,
             commands::findings::clear_bssid_mark,
             commands::findings::bssid_link_options,
+            commands::tools::tool_ping,
+            commands::tools::tool_traceroute,
+            commands::tools::tool_dns,
+            commands::tools::tool_port_check,
+            commands::tools::tool_iperf3,
+            commands::tools::cancel_tool,
+            commands::tools::dns_system_servers,
+            commands::tools::list_tool_runs,
+            commands::tools::get_tool_run,
+            commands::tools::delete_tool_run,
+            commands::tools::clear_tool_runs,
+            commands::tools::attach_tool_run,
+            commands::tools::list_floor_tool_runs,
         ]
     };
 }

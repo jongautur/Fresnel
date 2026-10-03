@@ -37,7 +37,7 @@ pub(super) fn enum_parse<T: DeserializeOwned>(s: &str, fallback: T) -> T {
     serde_json::from_value(serde_json::Value::String(s.to_owned())).unwrap_or(fallback)
 }
 
-fn exists(conn: &Connection, table: &str, id: i64) -> Result<bool> {
+pub(super) fn exists(conn: &Connection, table: &str, id: i64) -> Result<bool> {
     Ok(conn.query_row(
         &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = ?1)"),
         [id],

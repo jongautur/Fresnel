@@ -7,6 +7,7 @@ pub mod error;
 pub mod nettools;
 pub mod settings;
 pub mod survey;
+pub mod tools;
 pub mod wifi;
 
 pub use error::{Result, WifiError};

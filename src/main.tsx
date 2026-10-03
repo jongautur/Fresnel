@@ -4,6 +4,7 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installErrorForwarding } from "./lib/errorForwarding";
 import "./styles/app.css";
+import "./styles/tools.css";
 
 installErrorForwarding();
 

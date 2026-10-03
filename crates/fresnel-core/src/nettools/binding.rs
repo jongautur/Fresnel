@@ -140,6 +140,50 @@ pub(crate) async fn connect(
     }
 }
 
+/// A UDP socket for `target`'s family that can only use the Wi-Fi
+/// interface, or (`None`) an unbound one that follows the system's route.
+pub(crate) fn udp_socket(
+    binding: Option<&WifiBinding>,
+    target: IpAddr,
+) -> Result<tokio::net::UdpSocket> {
+    let iface = binding.map_or("Wi-Fi", |b| b.iface.as_str());
+    let unspecified: SocketAddr = match target {
+        IpAddr::V4(_) => (Ipv4Addr::UNSPECIFIED, 0).into(),
+        IpAddr::V6(_) => (Ipv6Addr::UNSPECIFIED, 0).into(),
+    };
+    let socket = match binding {
+        None => std::net::UdpSocket::bind(unspecified)
+            .map_err(|e| WifiError::Backend(format!("cannot create a socket: {e}")))?,
+        #[cfg(target_os = "linux")]
+        Some(binding) => {
+            use socket2::{Domain, Socket, Type};
+            let domain = if target.is_ipv4() {
+                Domain::IPV4
+            } else {
+                Domain::IPV6
+            };
+            let s = Socket::new(domain, Type::DGRAM, None)
+                .map_err(|e| WifiError::Backend(format!("cannot create a socket: {e}")))?;
+            s.bind_device(Some(binding.iface.as_bytes()))
+                .map_err(|e| bind_error(iface, &e))?;
+            s.bind(&unspecified.into())
+                .map_err(|e| WifiError::Backend(format!("cannot bind a socket: {e}")))?;
+            s.into()
+        }
+        #[cfg(not(target_os = "linux"))]
+        Some(binding) => {
+            let source = binding.source_for(target)?;
+            std::net::UdpSocket::bind(SocketAddr::new(source, 0))
+                .map_err(|e| bind_error(iface, &e))?
+        }
+    };
+    socket
+        .set_nonblocking(true)
+        .map_err(|e| WifiError::Backend(format!("cannot configure a socket: {e}")))?;
+    tokio::net::UdpSocket::from_std(socket)
+        .map_err(|e| WifiError::Backend(format!("cannot register a socket: {e}")))
+}
+
 #[cfg(target_os = "linux")]
 fn bind(socket: &TcpSocket, binding: &WifiBinding, _target: IpAddr) -> std::io::Result<()> {
     socket.bind_device(Some(binding.iface.as_bytes()))

@@ -167,12 +167,12 @@ fn typed<T: serde::de::DeserializeOwned>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::database::projects::NewProject;
     use crate::nettools::{PingResult, ProbeMethod, ProbeOutcome};
 
-    fn point(db: &Database) -> (i64, i64) {
+    pub(crate) fn point(db: &Database) -> (i64, i64) {
         let p = db
             .create_project(&NewProject {
                 name: "HQ".into(),

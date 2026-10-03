@@ -26,6 +26,8 @@
 //! results, in reverse (download) our own received bytes.
 
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -154,7 +156,30 @@ pub struct Iperf3Result {
     /// the sender doesn't report them.
     pub retransmits: Option<u64>,
     pub retransmits_source: Option<RetransmitSource>,
+    /// Per-second throughput as this computer saw it (absent in results
+    /// stored before it was recorded).
+    #[serde(default)]
+    pub intervals: Vec<Iperf3Interval>,
 }
+
+/// One second of a test, counted on this computer: in upload the bytes
+/// TCP accepted from us (the sender's view; the final average comes from
+/// the server's receiver count), in download the bytes we received.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Iperf3Interval {
+    /// Seconds since the data started flowing.
+    pub start_s: f64,
+    pub end_s: f64,
+    pub bytes: u64,
+    pub bits_per_second: f64,
+    /// Inside the omitted slow-start time (not in the average).
+    pub omitted: bool,
+    /// Sender retransmissions in this second (upload on Linux only).
+    pub retransmits: Option<u64>,
+}
+
+pub type OnInterval = Box<dyn FnMut(&Iperf3Interval) + Send>;
 
 /// Per-phase deadlines; tests shorten them.
 #[derive(Debug, Clone, Copy)]
@@ -186,11 +211,39 @@ pub async fn iperf3_tcp(
     run(Some(binding), config, Timeouts::default(), cancel).await
 }
 
+/// The Tools page's iperf3: bound to the Wi-Fi interface or (`None`) along
+/// the system's route, reporting each second through `on_interval`.
+pub async fn iperf3_tcp_live(
+    binding: Option<&WifiBinding>,
+    config: Iperf3Config,
+    cancel: &Cancel,
+    on_interval: OnInterval,
+) -> TestResult<Iperf3Result> {
+    run_with(
+        binding,
+        config,
+        Timeouts::default(),
+        cancel,
+        Some(on_interval),
+    )
+    .await
+}
+
 pub(crate) async fn run(
     binding: Option<&WifiBinding>,
     config: Iperf3Config,
     timeouts: Timeouts,
     cancel: &Cancel,
+) -> TestResult<Iperf3Result> {
+    run_with(binding, config, timeouts, cancel, None).await
+}
+
+async fn run_with(
+    binding: Option<&WifiBinding>,
+    config: Iperf3Config,
+    timeouts: Timeouts,
+    cancel: &Cancel,
+    on_interval: Option<OnInterval>,
 ) -> TestResult<Iperf3Result> {
     config.validate()?;
     cancel.check()?;
@@ -206,7 +259,7 @@ pub(crate) async fn run(
         _ = cancel.cancelled() => Err(TestError::Cancelled),
         r = tokio::time::timeout_at(
             deadline,
-            session(&mut control, binding, &config, &cookie, timeouts),
+            session(&mut control, binding, &config, &cookie, timeouts, on_interval),
         ) => r.unwrap_or_else(|_| Err(WifiError::Timeout(
             "the iperf3 test didn't finish in time".into(),
         ).into())),
@@ -235,6 +288,7 @@ async fn session(
     config: &Iperf3Config,
     cookie: &[u8; COOKIE_LEN],
     t: Timeouts,
+    mut on_interval: Option<OnInterval>,
 ) -> TestResult<Iperf3Result> {
     let reverse = config.direction == Iperf3Direction::Download;
     write_all(control, cookie, t.control, "sending the cookie").await?;
@@ -270,25 +324,33 @@ async fn session(
     let omit_end = start + config.omit;
     let end = omit_end + config.duration;
     let mut data = JoinSet::new();
+    let counted = Arc::new(AtomicU64::new(0));
+    let retrans_probe = RetransProbe::new(&streams, reverse);
     for stream in streams {
         if reverse {
-            data.spawn(receive(stream, omit_end, end, t.stall));
+            data.spawn(receive(stream, omit_end, end, t.stall, counted.clone()));
         } else {
-            data.spawn(send(stream, omit_end, end, t.stall));
+            data.spawn(send(stream, omit_end, end, t.stall, counted.clone()));
         }
     }
+    let mut clock = IntervalClock::new(start, omit_end, end, &counted, &retrans_probe);
+    let ticker = clock.tick_until_end(on_interval.as_mut());
     // The server says nothing while data flows; anything it does say (an
     // error, being stopped, closing) ends the test.
     let running = tokio::select! {
         biased;
         state = read_state(control, end + t.stall - Instant::now()) => Err(state),
         r = join_streams(&mut data, config.streams) => Ok(r),
+        never = ticker => match never {},
     };
     let outcomes = match running {
         Ok(r) => r?,
         Err(StateRead::State(SERVER_ERROR)) => return Err(server_error(control).await.into()),
         Err(state) => return Err(unexpected(state, "the test").into()),
     };
+    // The last second ends when the streams do.
+    clock.finish(on_interval.as_mut());
+    let intervals = clock.intervals;
     // Reverse: keep reading until the end so the server's sends never block
     // while it processes TEST_END (dropping the set stops these).
     let mut drains = JoinSet::new();
@@ -343,6 +405,7 @@ async fn session(
             sender_bytes: Some(server.bytes),
             retransmits: server.retransmits,
             retransmits_source: server.retransmits.map(|_| RetransmitSource::Server),
+            intervals,
         }
     } else {
         let seconds = server.seconds.unwrap_or(config.duration.as_secs_f64());
@@ -360,6 +423,7 @@ async fn session(
             sender_bytes: Some(client_bytes),
             retransmits: retrans,
             retransmits_source: retrans.map(|_| RetransmitSource::ClientTcpInfo),
+            intervals,
         }
     };
     Ok(result)
@@ -387,12 +451,138 @@ async fn join_streams(
     Ok(out)
 }
 
+/// Cuts the test into seconds (all streams together).
+struct IntervalClock<'a> {
+    start: Instant,
+    omit_end: Instant,
+    end: Instant,
+    counted: &'a AtomicU64,
+    retrans: &'a RetransProbe,
+    last_bytes: u64,
+    last_retrans: Option<u64>,
+    last_at: Instant,
+    intervals: Vec<Iperf3Interval>,
+}
+
+impl<'a> IntervalClock<'a> {
+    fn new(
+        start: Instant,
+        omit_end: Instant,
+        end: Instant,
+        counted: &'a AtomicU64,
+        retrans: &'a RetransProbe,
+    ) -> Self {
+        Self {
+            start,
+            omit_end,
+            end,
+            counted,
+            retrans,
+            last_bytes: 0,
+            last_retrans: retrans.total(),
+            last_at: start,
+            intervals: Vec::new(),
+        }
+    }
+
+    /// Report each whole second before `end`, then wait forever (the
+    /// caller's other branches end the select; `finish` does the last one).
+    async fn tick_until_end(
+        &mut self,
+        mut on_interval: Option<&mut OnInterval>,
+    ) -> std::convert::Infallible {
+        let mut tick = self.start + Duration::from_secs(1);
+        while tick < self.end {
+            tokio::time::sleep_until(tick).await;
+            self.cut(on_interval.as_deref_mut());
+            tick += Duration::from_secs(1);
+        }
+        std::future::pending().await
+    }
+
+    /// The last interval, up to now (the streams have ended).
+    fn finish(&mut self, on_interval: Option<&mut OnInterval>) {
+        if Instant::now() > self.last_at + Duration::from_millis(100) {
+            self.cut(on_interval);
+        }
+    }
+
+    fn cut(&mut self, on_interval: Option<&mut OnInterval>) {
+        let now = Instant::now().min(self.end + Duration::from_secs(1));
+        let total = self.counted.load(Ordering::Relaxed);
+        let bytes = total.saturating_sub(self.last_bytes);
+        let total_retrans = self.retrans.total();
+        let seconds = (now - self.last_at).as_secs_f64().max(1e-3);
+        let interval = Iperf3Interval {
+            start_s: (self.last_at - self.start).as_secs_f64(),
+            end_s: (now - self.start).as_secs_f64(),
+            bytes,
+            bits_per_second: bytes as f64 * 8.0 / seconds,
+            // Mostly inside the omitted time (seconds straddle it only if
+            // a tick was late).
+            omitted: self.last_at + (now - self.last_at) / 2 < self.omit_end,
+            retransmits: self
+                .last_retrans
+                .zip(total_retrans)
+                .map(|(a, b)| b.saturating_sub(a)),
+        };
+        if let Some(f) = on_interval {
+            f(&interval);
+        }
+        self.intervals.push(interval);
+        (self.last_bytes, self.last_retrans, self.last_at) = (total, total_retrans, now);
+    }
+}
+
+/// Reads the upload streams' retransmission counters while they are owned
+/// by their tasks (Linux: `TCP_INFO` on the raw descriptors, which stay
+/// open until the results are exchanged).
+struct RetransProbe {
+    #[cfg(target_os = "linux")]
+    fds: Vec<std::os::fd::RawFd>,
+}
+
+impl RetransProbe {
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+    fn new(streams: &[TcpStream], reverse: bool) -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            Self {
+                fds: if reverse {
+                    Vec::new()
+                } else {
+                    streams.iter().map(|s| s.as_raw_fd()).collect()
+                },
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        Self {}
+    }
+
+    fn total(&self) -> Option<u64> {
+        #[cfg(target_os = "linux")]
+        {
+            if self.fds.is_empty() {
+                return None;
+            }
+            self.fds
+                .iter()
+                .map(|fd| fd_total_retrans(*fd))
+                .sum::<Option<u64>>()
+        }
+        #[cfg(not(target_os = "linux"))]
+        None
+    }
+}
+
 /// Upload: write blocks until `end`; count what TCP accepted after `omit_end`.
 async fn send(
     mut stream: TcpStream,
     omit_end: Instant,
     end: Instant,
     stall: Duration,
+    counted: Arc<AtomicU64>,
 ) -> Result<StreamOutcome, WifiError> {
     let payload = payload();
     let mut bytes = 0u64;
@@ -408,6 +598,7 @@ async fn send(
         match tokio::time::timeout(stall, stream.write(&payload)).await {
             Ok(Ok(0)) => return Err(closed("the test")),
             Ok(Ok(n)) => {
+                counted.fetch_add(n as u64, Ordering::Relaxed);
                 if now >= omit_end {
                     bytes += n as u64;
                 }
@@ -433,6 +624,7 @@ async fn receive(
     omit_end: Instant,
     end: Instant,
     stall: Duration,
+    counted: Arc<AtomicU64>,
 ) -> Result<StreamOutcome, WifiError> {
     let mut buf = vec![0u8; BLOCK_LEN];
     let mut bytes = 0u64;
@@ -445,6 +637,7 @@ async fn receive(
         match tokio::time::timeout(wait, stream.read(&mut buf)).await {
             Ok(Ok(0)) => return Err(closed("the test")),
             Ok(Ok(n)) => {
+                counted.fetch_add(n as u64, Ordering::Relaxed);
                 if Instant::now() >= omit_end {
                     bytes += n as u64;
                 }
@@ -488,12 +681,17 @@ fn payload() -> Vec<u8> {
 #[cfg(target_os = "linux")]
 fn total_retrans(stream: &TcpStream) -> Option<u64> {
     use std::os::fd::AsRawFd;
+    fd_total_retrans(stream.as_raw_fd())
+}
+
+#[cfg(target_os = "linux")]
+fn fd_total_retrans(fd: std::os::fd::RawFd) -> Option<u64> {
     // SAFETY: tcp_info is plain data; getsockopt writes at most `len` bytes.
     let mut info: libc::tcp_info = unsafe { std::mem::zeroed() };
     let mut len = std::mem::size_of::<libc::tcp_info>() as libc::socklen_t;
     let rc = unsafe {
         libc::getsockopt(
-            stream.as_raw_fd(),
+            fd,
             libc::IPPROTO_TCP,
             libc::TCP_INFO,
             (&mut info as *mut libc::tcp_info).cast(),
@@ -972,15 +1170,22 @@ mod tests {
             server_results(&[(1_000_000, -1), (500_000, -1)], false),
             seen.clone(),
         ));
-        let r = run(
+        let live = Arc::new(std::sync::Mutex::new(0usize));
+        let counter = live.clone();
+        let r = run_with(
             None,
             config(addr, Iperf3Direction::Upload, 2),
             SHORT,
             &Cancel::never(),
+            Some(Box::new(move |_| *counter.lock().unwrap() += 1)),
         )
         .await
         .unwrap();
         server.await.unwrap();
+        // One second, nothing omitted: one interval, reported live too.
+        assert_eq!(r.intervals.len(), 1, "{:?}", r.intervals);
+        assert_eq!(*live.lock().unwrap(), 1);
+        assert!(r.intervals[0].bytes > 0 && !r.intervals[0].omitted);
         let seen = seen.lock().await;
         let params = seen.params.as_ref().unwrap();
         assert_eq!(params["tcp"], true);

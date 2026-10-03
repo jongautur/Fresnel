@@ -5,21 +5,25 @@ import { Live } from "./pages/Live";
 import { Networks } from "./pages/Networks";
 import { Survey } from "./pages/Survey";
 import { Settings, type Theme } from "./pages/Settings";
-import { IconLive, IconNetworks, IconSettings, IconSurvey } from "./components/Icons";
+import { Tools } from "./pages/Tools";
+import { IconLive, IconNetworks, IconSettings, IconSurvey, IconTools } from "./components/Icons";
 import { StatusDot } from "./components/StatusDot";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { api } from "./api/tauri";
+import { NAVIGATE_EVENT, type NavigateDetail, type PageId } from "./lib/navigation";
 
-type Page = "live" | "networks" | "survey" | "settings";
+type Page = PageId;
 
 const NAV: { id: Page; label: string; icon: ComponentType<SVGProps<SVGSVGElement>> }[] = [
   { id: "live", label: "Live", icon: IconLive },
   { id: "networks", label: "Networks", icon: IconNetworks },
   { id: "survey", label: "Survey", icon: IconSurvey },
+  { id: "tools", label: "Tools", icon: IconTools },
   { id: "settings", label: "Settings", icon: IconSettings },
 ];
 
 const THEME_KEY = "fresnel.theme";
+
 
 function loadTheme(): Theme {
   try {
@@ -48,6 +52,20 @@ export default function App() {
   // E.g. a damaged database was set aside at startup: say so before the user
   // wonders where their projects went.
   const [dbNotice, setDbNotice] = useState<string | null>(null);
+
+  // Other views can ask to show a page (e.g. Tools › iperf3 → Settings).
+  useEffect(() => {
+    const go = (e: Event) => {
+      const target = (e as CustomEvent<NavigateDetail>).detail;
+      if (!target || !NAV.some((n) => n.id === target.page)) return;
+      setPage(target.page);
+      if (target.anchor) {
+        requestAnimationFrame(() => document.getElementById(target.anchor!)?.scrollIntoView({ block: "start" }));
+      }
+    };
+    window.addEventListener(NAVIGATE_EVENT, go);
+    return () => window.removeEventListener(NAVIGATE_EVENT, go);
+  }, []);
 
   useEffect(() => {
     api.appInfo().then(
@@ -97,6 +115,10 @@ export default function App() {
           {page === "live" && <Live />}
           {page === "networks" && <Networks />}
           {page === "survey" && <Survey />}
+          {/* Kept mounted: a running tool keeps its live output across pages. */}
+          <div hidden={page !== "tools"} className="page-host">
+            <Tools />
+          </div>
           {page === "settings" && <Settings theme={theme} setTheme={setTheme} />}
         </main>
       </div>

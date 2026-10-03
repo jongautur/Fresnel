@@ -38,3 +38,6 @@ export const IconRadar = (p: P) => (
 export const IconAlert = (p: P) => (
   <svg {...base(p)}><path d="M12 3l10 18H2z" /><path d="M12 10v5M12 18h.01" /></svg>
 );
+export const IconTools = (p: P) => (
+  <svg {...base(p)}><path d="M4 17l6-6M4 7l6 6" /><path d="M13 17h7" /><path d="M13 7h7M16 12h4" /></svg>
+);

@@ -1,5 +1,5 @@
 // The only module that talks to the Rust backend.
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   Adapter,
   AdapterId,
@@ -33,6 +33,17 @@ import type { FloorAnnotations, NotePin, NotePinInput, NoteTarget, Photo, PhotoT
 import type { PointTest, TestSettings } from "../types/pointTests";
 import type { BssidMark, FindingScope, Findings, LinkOptions, MarkStatus } from "../types/findings";
 import type { Branding, BrandingInfo } from "../types/settings";
+import type {
+  DnsParams,
+  Iperf3Params,
+  PingParams,
+  PortCheckParams,
+  SystemDnsServer,
+  ToolEvent,
+  ToolKind,
+  ToolRun,
+  TraceParams,
+} from "../types/tools";
 
 function toApiError(e: unknown): ApiError {
   if (e && typeof e === "object" && "kind" in e && "message" in e) {
@@ -183,7 +194,40 @@ export const api = {
   brandingLogo: () => call<ArrayBuffer>("branding_logo"),
   setBrandingLogo: (bytes: Uint8Array) => call<BrandingInfo>("set_branding_logo", bytes),
   clearBrandingLogo: () => call<BrandingInfo>("clear_branding_logo"),
+
+  // Tools page. Each run streams events to `onEvent` and resolves with the
+  // stored run; `runId` (chosen here) is what `cancelTool` takes.
+  toolPing: (runId: string, params: PingParams, onEvent: (e: ToolEvent) => void) =>
+    stream("tool_ping", { runId, params }, onEvent),
+  toolTraceroute: (runId: string, params: TraceParams, onEvent: (e: ToolEvent) => void) =>
+    stream("tool_traceroute", { runId, params }, onEvent),
+  toolDns: (runId: string, params: DnsParams, onEvent: (e: ToolEvent) => void) =>
+    stream("tool_dns", { runId, params }, onEvent),
+  toolPortCheck: (runId: string, params: PortCheckParams, onEvent: (e: ToolEvent) => void) =>
+    stream("tool_port_check", { runId, params }, onEvent),
+  toolIperf3: (runId: string, params: Iperf3Params, onEvent: (e: ToolEvent) => void) =>
+    stream("tool_iperf3", { runId, params }, onEvent),
+  /** Stops a run; it is stored with what it measured so far. False if it already ended. */
+  cancelTool: (runId: string) => call<boolean>("cancel_tool", { runId }),
+  dnsSystemServers: () => call<SystemDnsServer[]>("dns_system_servers"),
+  /** Newest first, without results. */
+  listToolRuns: (kind: ToolKind | null, limit = 100) => call<ToolRun[]>("list_tool_runs", { kind, limit }),
+  getToolRun: (id: number) => call<ToolRun | null>("get_tool_run", { id }),
+  deleteToolRun: (id: number) => call<void>("delete_tool_run", { id }),
+  /** Runs attached to survey points are kept. Returns how many were deleted. */
+  clearToolRuns: (kind: ToolKind | null) => call<number>("clear_tool_runs", { kind }),
+  /** `pointId` null: detach. */
+  attachToolRun: (id: number, pointId: number | null) => call<ToolRun>("attach_tool_run", { id, pointId }),
+  listFloorToolRuns: (floorId: number) => call<ToolRun[]>("list_floor_tool_runs", { floorId }),
 };
+
+/** A tool command with a live event channel (outside the app, `call` reports that instead). */
+function stream(cmd: string, args: Record<string, unknown>, onEvent: (e: ToolEvent) => void): Promise<ToolRun> {
+  if (!isTauri()) return call<ToolRun>(cmd, args);
+  const onEventChannel = new Channel<ToolEvent>();
+  onEventChannel.onmessage = onEvent;
+  return call<ToolRun>(cmd, { ...args, onEvent: onEventChannel });
+}
 
 export function isApiError(e: unknown): e is ApiError {
   return !!e && typeof e === "object" && "kind" in e && "message" in e;

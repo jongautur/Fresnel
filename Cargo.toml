@@ -35,6 +35,9 @@ kamadak-exif = "0.6"
 # Active tests (Linux): ping sockets, SO_BINDTODEVICE, TCP_INFO.
 socket2 = "0.6"
 libc = "0.2"
+# DNS lookups on the Tools page: message encoding and parsing only (our own
+# UDP/TCP transport, so queries can be bound to the Wi-Fi interface).
+hickory-proto = { version = "0.26", default-features = false, features = ["std"] }
 
 [profile.release]
 lto = true

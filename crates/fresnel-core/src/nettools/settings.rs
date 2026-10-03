@@ -47,8 +47,12 @@ pub struct TestSettings {
     pub tcp_port: u16,
     /// Another host to ping (IP address).
     pub extra_host: Option<String>,
-    /// iperf3 server (IP address); `None`: no throughput test.
+    /// The iperf3 server (IP address), shared by the Tools page and point
+    /// tests; `None`: none set up.
     pub iperf3_server: Option<String>,
+    /// "+ run tests" includes iperf3 (when a server is set). Files from
+    /// before this setting ran it whenever a server was set: default on.
+    pub iperf3_in_point_tests: bool,
     pub iperf3_port: u16,
     pub iperf3_streams: u8,
     pub iperf3_duration_s: u64,
@@ -64,6 +68,7 @@ impl Default for TestSettings {
             tcp_port: 80,
             extra_host: None,
             iperf3_server: None,
+            iperf3_in_point_tests: true,
             iperf3_port: iperf3::DEFAULT_PORT,
             iperf3_streams: 4,
             iperf3_duration_s: 5,
@@ -108,7 +113,7 @@ impl TestSettings {
 
     pub fn ping_config(&self) -> PingConfig {
         PingConfig {
-            count: self.ping_count,
+            count: Some(self.ping_count),
             tcp_port: self.tcp_port,
             ..PingConfig::default()
         }

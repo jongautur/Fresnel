@@ -1,6 +1,7 @@
 // Labels and summaries for active tests (tables, the Measure Here toggle).
 import type { LinkSnapshot, PointTest, PointTestRole, TestSettings } from "../types/pointTests";
 import { formatBitrate } from "./format";
+import { api } from "../api/tauri";
 
 export const ROLE_LABEL: Record<PointTestRole, string> = {
   gateway: "Gateway ping",
@@ -81,10 +82,24 @@ export function roamedLabel(t: PointTest): string {
 export function plannedTests(s: TestSettings): string {
   const parts = ["gateway ping"];
   if (s.extraHost) parts.push(`ping ${s.extraHost}`);
-  if (s.iperf3Server) {
+  if (s.iperf3Server && s.iperf3InPointTests) {
     const dirs = s.iperf3Directions === "both" ? "↑↓" : s.iperf3Directions === "upload" ? "↑" : "↓";
     const runs = s.iperf3Directions === "both" ? 2 : 1;
     parts.push(`iperf3 ${dirs} ${s.iperf3Server} (≈ ${runs * (s.iperf3DurationS + s.iperf3OmitS)} s)`);
   }
   return parts.join(", ");
+}
+
+/** Tell open views that the active-test settings (incl. the iperf3 server) changed. */
+export const TEST_SETTINGS_CHANGED = "fresnel:test-settings-changed";
+
+/**
+ * Save only some fields: re-read the stored settings first, so two cards
+ * editing different parts of the same file don't undo each other.
+ */
+export async function patchTestSettings(patch: Partial<TestSettings>): Promise<TestSettings> {
+  const current = await api.getTestSettings();
+  const saved = await api.saveTestSettings({ ...current, ...patch });
+  window.dispatchEvent(new CustomEvent(TEST_SETTINGS_CHANGED));
+  return saved;
 }

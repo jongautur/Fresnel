@@ -93,7 +93,10 @@ export interface TestSettings {
   /** Timed when ICMP isn't allowed. */
   tcpPort: number;
   extraHost: string | null;
+  /** Shared by the Tools page and point tests. */
   iperf3Server: string | null;
+  /** "+ run tests" includes iperf3 when a server is set. */
+  iperf3InPointTests: boolean;
   iperf3Port: number;
   iperf3Streams: number;
   iperf3DurationS: number;

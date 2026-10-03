@@ -1,0 +1,47 @@
+/* Tools page. */
+
+.page-host { display: contents; }
+.page-host[hidden], .tool-panel[hidden] { display: none; }
+.tool-panel { display: flex; flex-direction: column; gap: 14px; }
+.tool-tabs { align-self: flex-start; }
+
+.tool-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; padding: 12px 14px 4px; }
+.tool-field { display: flex; flex-direction: column; }
+.tool-field select.input { min-width: 0; }
+.tool-target { flex: 1 1 260px; min-width: 200px; }
+.tool-target .input { width: 100%; }
+.tool-grow { flex: 1 1 240px; }
+.tool-grow .input { width: 100%; }
+.tool-options { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.tool-options > .input { flex: 1 1 220px; min-width: 160px; }
+.tool-form .field-hint { flex-basis: 100%; }
+
+.run-info { display: flex; flex-direction: column; gap: 8px; }
+.run-info:empty { display: none; }
+.run-info-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+
+.stat-row { display: flex; flex-wrap: wrap; gap: 6px 28px; padding: 12px 14px 4px; }
+.stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; display: flex; align-items: center; gap: 6px; }
+.stat-value { font-size: 18px; color: var(--text-strong); }
+.stat-value.mono { font-size: 18px; }
+.stat-bad { color: var(--bad); }
+
+.series-chart { position: relative; width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.series-chart svg { display: block; overflow: visible; }
+.series-swatch { display: inline-block; width: 14px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+.series-tooltip { top: 34px; min-width: 160px; }
+.series-tooltip .viz-tooltip-row { grid-template-columns: 14px auto 1fr; }
+.series-tooltip .series-swatch { align-self: center; }
+.tip-label { color: var(--muted); }
+.miss-mark { fill: var(--bad); font: 700 12px var(--font-mono); }
+.miss-glyph { color: var(--bad); font: 700 13px var(--font-mono); }
+
+.probe-list { max-height: 260px; margin-top: 8px; }
+.tool-history { max-height: 360px; }
+.data-table td.nowrap { white-space: nowrap; }
+.trace-table td.wrap { min-width: 220px; }
+
+.dns-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; }
+.dns-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.card-header h2.dns-server { text-transform: none; letter-spacing: 0; color: var(--text-strong); font-size: 13px; }
+.iperf3-setup { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 30px; }
