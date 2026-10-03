@@ -23,7 +23,8 @@ export interface LinkSnapshot {
 
 export type ProbeOutcome =
   | { outcome: "reply"; rttMs: number }
-  | { outcome: "refused"; rttMs: number }
+  /** rttMs null on Windows: its retries after a reset make the time meaningless. */
+  | { outcome: "refused"; rttMs: number | null }
   | { outcome: "timeout" }
   | { outcome: "unreachable"; detail: string }
   | { outcome: "error"; detail: string };

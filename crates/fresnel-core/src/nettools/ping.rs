@@ -75,10 +75,12 @@ pub enum ProbeOutcome {
     Reply {
         rtt_ms: f64,
     },
-    /// TCP only: the host answered with a reset (port closed). Still a
-    /// real round trip, so it counts towards latency.
+    /// TCP only: the host answered with a reset (port closed). A real
+    /// round trip, so it counts towards latency — except on Windows, which
+    /// retries the connection after a reset (about 2 s) before reporting
+    /// it, so the time isn't one round trip and is left out (None).
     Refused {
-        rtt_ms: f64,
+        rtt_ms: Option<f64>,
     },
     Timeout,
     /// An ICMP error or the OS said the host or network is unreachable.
@@ -93,7 +95,8 @@ pub enum ProbeOutcome {
 impl ProbeOutcome {
     fn rtt_ms(&self) -> Option<f64> {
         match self {
-            Self::Reply { rtt_ms } | Self::Refused { rtt_ms } => Some(*rtt_ms),
+            Self::Reply { rtt_ms } => Some(*rtt_ms),
+            Self::Refused { rtt_ms } => *rtt_ms,
             _ => None,
         }
     }
@@ -131,7 +134,12 @@ impl PingResult {
     ) -> Self {
         let rtts: Vec<f64> = probes.iter().filter_map(ProbeOutcome::rtt_ms).collect();
         let sent = probes.len() as u32;
-        let received = rtts.len() as u32;
+        // Answered probes, including resets without a usable time (Windows):
+        // the host did answer, so they aren't loss.
+        let received = probes
+            .iter()
+            .filter(|p| matches!(p, ProbeOutcome::Reply { .. } | ProbeOutcome::Refused { .. }))
+            .count() as u32;
         Self {
             version: PING_RESULTS_VERSION,
             method,
@@ -256,7 +264,9 @@ pub(crate) async fn tcp_probes(
             }
             Err(ConnectError::Bind(e)) => return Err(e.into()),
             Err(ConnectError::Connect(e)) => match e.kind() {
-                std::io::ErrorKind::ConnectionRefused => ProbeOutcome::Refused { rtt_ms },
+                std::io::ErrorKind::ConnectionRefused => ProbeOutcome::Refused {
+                    rtt_ms: (!cfg!(windows)).then_some(rtt_ms),
+                },
                 std::io::ErrorKind::TimedOut => ProbeOutcome::Timeout,
                 std::io::ErrorKind::HostUnreachable | std::io::ErrorKind::NetworkUnreachable => {
                     ProbeOutcome::Unreachable {
@@ -519,6 +529,8 @@ mod tests {
             PingConfig {
                 tcp_port: port,
                 count: 1,
+                // Windows retries a reset connect for about 2 s first.
+                timeout: Duration::from_secs(10),
                 ..config
             },
             &Cancel::never(),
@@ -526,6 +538,8 @@ mod tests {
         .await
         .unwrap();
         assert!(matches!(r.probes[0], ProbeOutcome::Refused { .. }), "{r:?}");
+        assert_eq!(r.received, 1, "{r:?}");
+        assert_eq!(r.avg_ms.is_some(), !cfg!(windows), "{r:?}");
     }
 
     #[tokio::test]
