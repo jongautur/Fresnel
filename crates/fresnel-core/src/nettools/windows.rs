@@ -353,7 +353,10 @@ pub(crate) fn echo(
     let reply_len = (reply.len() * 8) as u32;
     let options = ttl.map(|ttl| IP_OPTION_INFORMATION {
         Ttl: ttl,
-        ..Default::default()
+        Tos: 0,
+        Flags: 0,
+        OptionsSize: 0,
+        OptionsData: std::ptr::null_mut(),
     });
     let options_ptr = options.as_ref().map(|o| o as *const IP_OPTION_INFORMATION);
     // SAFETY: buffers outlive the synchronous calls (no event, no APC).

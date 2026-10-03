@@ -33,6 +33,7 @@ pub const TRACE_RESULTS_VERSION: u32 = 1;
 pub const MAX_HOPS: u8 = 64;
 pub const MAX_ROUNDS: u32 = 10_000;
 /// UDP probes go to 33434 + TTL − 1 (the classic traceroute ports).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const UDP_BASE_PORT: u16 = 33434;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

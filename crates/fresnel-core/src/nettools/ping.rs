@@ -88,7 +88,7 @@ impl PingConfig {
             .map(|n| (self.interval + self.timeout) * n + Duration::from_secs(5))
     }
 
-    fn wants_more(&self, sent: u32) -> bool {
+    pub(crate) fn wants_more(&self, sent: u32) -> bool {
         self.count.is_none_or(|n| sent < n)
     }
 }

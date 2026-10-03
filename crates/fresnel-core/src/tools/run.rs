@@ -1116,6 +1116,8 @@ mod tests {
             &ctx,
             PingParams {
                 tcp_port: port,
+                // The listener is IPv4; "localhost" may resolve to ::1 first.
+                family: IpFamily::V4,
                 ..ping_params("localhost", Via::System)
             },
             &Cancel::never(),
