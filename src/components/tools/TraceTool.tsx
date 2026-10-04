@@ -34,6 +34,9 @@ const DEFAULTS: Form = {
   names: true,
 };
 
+/** UDP traceroute needs raw sockets (administrator) on Windows; Fresnel offers it on Linux only. */
+const UDP_AVAILABLE = !/Windows/i.test(navigator.userAgent);
+
 /** Per-hop totals while the run is live (the stored result is computed the same way). */
 interface LiveHop {
   sent: number;
@@ -94,7 +97,10 @@ function toStats(ttl: number, h: LiveHop, names: Map<string, string>): HopStats 
 }
 
 export function TraceTool() {
-  const [form, setFormState] = useState<Form>(() => loadForm("traceroute", DEFAULTS));
+  const [form, setFormState] = useState<Form>(() => {
+    const f = loadForm("traceroute", DEFAULTS);
+    return UDP_AVAILABLE ? f : { ...f, method: "icmp" };
+  });
   const setForm = (patch: Partial<Form>) =>
     setFormState((f) => {
       const next = { ...f, ...patch };
@@ -138,7 +144,7 @@ export function TraceTool() {
       timeoutMs: form.timeoutMs,
       rounds: form.mtr ? null : form.rounds,
       intervalMs: form.mtr ? form.intervalMs : 0,
-      method: form.method,
+      method: UDP_AVAILABLE ? form.method : "icmp",
       names: form.names,
     };
     setHops(new Map());
@@ -233,7 +239,13 @@ export function TraceTool() {
               <button type="button" className={form.method === "icmp" ? "active" : ""} disabled={running} onClick={() => setForm({ method: "icmp" })}>
                 ICMP
               </button>
-              <button type="button" className={form.method === "udp" ? "active" : ""} disabled={running} onClick={() => setForm({ method: "udp" })}>
+              <button
+                type="button"
+                className={form.method === "udp" ? "active" : ""}
+                disabled={running || !UDP_AVAILABLE}
+                title={UDP_AVAILABLE ? undefined : "UDP traceroute needs administrator rights on Windows; ICMP works without"}
+                onClick={() => setForm({ method: "udp" })}
+              >
                 UDP
               </button>
             </div>
