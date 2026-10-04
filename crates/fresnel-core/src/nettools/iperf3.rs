@@ -247,14 +247,8 @@ async fn run_with(
 ) -> TestResult<Iperf3Result> {
     config.validate()?;
     cancel.check()?;
-    let deadline = Instant::now() + config.max_duration();
-    let mut control = tokio::select! {
-        _ = cancel.cancelled() => return Err(TestError::Cancelled),
-        r = binding::connect(binding, config.server, timeouts.connect) => {
-            r.map_err(|e| connect_error(config.server, e))?
-        }
-    };
-    let cookie = make_cookie();
+    let deadline = Instant::now() + config.max_duration() + START_RETRY_TOTAL;
+    let (mut control, cookie) = start(binding, &config, timeouts, cancel).await?;
     let outcome = tokio::select! {
         _ = cancel.cancelled() => Err(TestError::Cancelled),
         r = tokio::time::timeout_at(
@@ -282,6 +276,107 @@ async fn run_with(
     outcome
 }
 
+/// Waits before each new attempt to start a test.
+const START_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(250),
+    Duration::from_millis(750),
+    Duration::from_millis(1500),
+];
+const START_RETRY_TOTAL: Duration = Duration::from_millis(2500);
+
+/// Why one attempt to start a test failed, and whether another is worth it.
+enum StartFailure {
+    /// Before the server took the test: refused, closed right after
+    /// connecting, or busy. Nothing ran; trying again is safe.
+    Retry {
+        error: WifiError,
+        refused: bool,
+    },
+    Fatal(WifiError),
+}
+
+/// Connect, send the cookie and wait for PARAM_EXCHANGE, retrying a few
+/// times when the server wasn't ready. An iperf3 server closes its
+/// listening socket after every test (and after any connection that sends
+/// no cookie, such as a port check) and opens a new one for the next: a
+/// connection that lands in between is refused, or accepted by the old
+/// socket and then reset. Back-to-back tests (upload then download) hit
+/// this regularly. Returns the control connection and the test's cookie.
+async fn start(
+    binding: Option<&WifiBinding>,
+    config: &Iperf3Config,
+    t: Timeouts,
+    cancel: &Cancel,
+) -> TestResult<(TcpStream, [u8; COOKIE_LEN])> {
+    let mut delays = START_RETRY_DELAYS.iter();
+    // What to report if every attempt fails: a "busy" or "closed" says more
+    // than the "refused" of a server that went away while we retried.
+    let mut reported: Option<WifiError> = None;
+    loop {
+        let attempt = async {
+            let mut control = binding::connect(binding, config.server, t.connect)
+                .await
+                .map_err(|e| match e {
+                    ConnectError::Connect(io)
+                        if io.kind() == std::io::ErrorKind::ConnectionRefused =>
+                    {
+                        StartFailure::Retry {
+                            error: connect_error(config.server, ConnectError::Connect(io)),
+                            refused: true,
+                        }
+                    }
+                    other => StartFailure::Fatal(connect_error(config.server, other)),
+                })?;
+            let cookie = make_cookie();
+            write_all(&mut control, &cookie, t.control, "the start of the test")
+                .await
+                .map_err(|error| StartFailure::Retry {
+                    error,
+                    refused: false,
+                })?;
+            match read_state(&mut control, t.control).await {
+                StateRead::State(PARAM_EXCHANGE) => Ok((control, cookie)),
+                StateRead::State(SERVER_ERROR) => {
+                    Err(StartFailure::Fatal(server_error(&mut control).await))
+                }
+                read @ (StateRead::Closed | StateRead::State(ACCESS_DENIED)) => {
+                    Err(StartFailure::Retry {
+                        error: unexpected(read, "the start of the test"),
+                        refused: false,
+                    })
+                }
+                other => Err(StartFailure::Fatal(unexpected(
+                    other,
+                    "the start of the test",
+                ))),
+            }
+        };
+        let failure = tokio::select! {
+            _ = cancel.cancelled() => return Err(TestError::Cancelled),
+            r = attempt => match r {
+                Ok(started) => return Ok(started),
+                Err(f) => f,
+            },
+        };
+        match failure {
+            StartFailure::Fatal(e) => return Err(e.into()),
+            StartFailure::Retry { error, refused } => {
+                if reported.is_none() || !refused {
+                    reported = Some(error);
+                }
+                match delays.next() {
+                    Some(delay) => cancel.sleep(*delay).await?,
+                    None => {
+                        return Err(reported
+                            .unwrap_or_else(|| closed("the start of the test"))
+                            .into())
+                    }
+                }
+            }
+        }
+    }
+}
+
 async fn session(
     control: &mut TcpStream,
     binding: Option<&WifiBinding>,
@@ -291,8 +386,6 @@ async fn session(
     mut on_interval: Option<OnInterval>,
 ) -> TestResult<Iperf3Result> {
     let reverse = config.direction == Iperf3Direction::Download;
-    write_all(control, cookie, t.control, "sending the cookie").await?;
-    expect_state(control, PARAM_EXCHANGE, "the start of the test", t.control).await?;
     let mut params = serde_json::json!({
         "tcp": true,
         "omit": config.omit.as_secs(),
@@ -1303,6 +1396,45 @@ mod tests {
         assert!(message(&e).contains("busy"), "{e}");
         let TestError::Failed(e) = e else { panic!() };
         assert!(e.hint().unwrap().contains("one test at a time"));
+    }
+
+    /// Between tests an iperf3 server closes and reopens its listening
+    /// socket; a connection caught in between is reset after the cookie, or
+    /// told "busy". Starting again shortly after succeeds.
+    #[tokio::test]
+    async fn start_is_retried_while_the_server_resets() {
+        let (listener, addr) = listen().await;
+        let seen = Arc::new(Mutex::new(Seen::default()));
+        let server = tokio::spawn({
+            let seen = seen.clone();
+            async move {
+                let (mut c, _) = listener.accept().await.unwrap();
+                cookie(&mut c).await;
+                drop(c);
+                let (mut c, _) = listener.accept().await.unwrap();
+                cookie(&mut c).await;
+                state(&mut c, ACCESS_DENIED).await;
+                drop(c);
+                fake_server(
+                    listener,
+                    false,
+                    server_results(&[(1_000_000, -1)], false),
+                    seen,
+                )
+                .await;
+            }
+        });
+        let r = run(
+            None,
+            config(addr, Iperf3Direction::Upload, 1),
+            SHORT,
+            &Cancel::never(),
+        )
+        .await
+        .unwrap();
+        server.await.unwrap();
+        assert_eq!(r.receiver_bytes, 1_000_000);
+        assert!(seen.lock().await.done);
     }
 
     #[tokio::test]
