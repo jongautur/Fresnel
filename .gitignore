@@ -12,3 +12,6 @@ plan.md
 
 # Agent worktrees
 .claude/worktrees/
+
+# Local website (not part of the app)
+aa-web/
