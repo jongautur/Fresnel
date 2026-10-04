@@ -1,0 +1,25 @@
+﻿
+Tracing route to one.one.one.one [1.1.1.1]
+over a maximum of 30 hops:
+
+  1    <1 ms    <1 ms    <1 ms  192.168.1.254 
+  2     2 ms     2 ms     2 ms  10.206.36.3 
+  3     2 ms     2 ms     2 ms  157-157-6-34.static.simnet.is [157.157.6.34] 
+  4     2 ms     2 ms     2 ms  rix-mh-gw.mila.network [195.130.211.41] 
+  5     3 ms     2 ms     2 ms  one.one.one.one [1.1.1.1] 
+
+Trace complete.
+
+Tracing route to dns.google [8.8.8.8]
+over a maximum of 30 hops:
+
+  1    <1 ms    <1 ms    <1 ms  192.168.1.254 
+  2     2 ms     1 ms     1 ms  10.206.36.3 
+  3     5 ms     2 ms     2 ms  157-157-6-34.static.simnet.is [157.157.6.34] 
+  4    37 ms    37 ms    38 ms  be201.am5.ams.nl.ip.siminn.is [157.157.55.249] 
+  5    37 ms    36 ms    37 ms  157.157.55.226 
+  6    39 ms    38 ms    38 ms  142.251.54.211 
+  7    37 ms    37 ms    37 ms  216.239.49.13 
+  8    36 ms    36 ms    36 ms  dns.google [8.8.8.8] 
+
+Trace complete.

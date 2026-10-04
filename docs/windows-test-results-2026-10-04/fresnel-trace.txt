@@ -1,0 +1,25 @@
+﻿
+running 1 test
+ 1 192.168.1.254                                      3/3 avg Some(0.0)
+ 2 10.206.36.3                                        3/3 avg Some(1.6666666666666667)
+ 3 157.157.6.34 157-157-6-34.static.simnet.is         3/3 avg Some(2.3333333333333335)
+ 4 195.130.211.41 rix-mh-gw.mila.network              3/3 avg Some(1.6666666666666667)
+ 5 1.1.1.1 one.one.one.one                            3/3 avg Some(2.3333333333333335)
+Icmp fallback None dest Some(5)
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 207 filtered out; finished in 2.01s
+
+
+running 1 test
+ 1 192.168.1.254                                      3/3 avg Some(0.0)
+ 2 10.206.36.3                                        3/3 avg Some(1.6666666666666667)
+ 3 157.157.6.34 157-157-6-34.static.simnet.is         3/3 avg Some(2.0)
+ 4 157.157.55.249 be201.am5.ams.nl.ip.siminn.is       3/3 avg Some(36.333333333333336)
+ 5 157.157.55.226                                     3/3 avg Some(36.0)
+ 6 142.251.54.211                                     3/3 avg Some(37.333333333333336)
+ 7 216.239.49.13                                      3/3 avg Some(37.333333333333336)
+ 8 8.8.8.8 dns.google                                 3/3 avg Some(36.0)
+Icmp fallback None dest Some(8)
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 207 filtered out; finished in 2.05s
+

@@ -1,0 +1,506 @@
+   Compiling synstructure v0.14.0
+   Compiling zerovec-derive v0.11.6
+   Compiling serde_derive v1.0.229
+   Compiling displaydoc v0.2.7
+   Compiling thiserror-impl v2.0.21
+   Compiling phf_macros v0.13.1
+   Compiling darling_core v0.24.1
+   Compiling web_atoms v0.2.6
+   Compiling cssparser-macros v0.7.1
+   Compiling derive_more-impl v2.1.1
+   Compiling selectors v0.38.0
+   Compiling indexmap v1.9.3
+   Compiling serde_derive_internals v0.29.1
+   Compiling bit-vec v0.8.0
+   Compiling rustc-hash v2.1.3
+   Compiling schemars v0.8.22
+   Compiling portable-atomic v1.15.0
+   Compiling hashbrown v0.12.3
+   Compiling hashbrown v0.17.1
+   Compiling camino v1.2.6
+   Compiling bit-set v0.8.0
+   Compiling regex v1.13.1
+   Compiling same-file v1.0.6
+   Compiling cfb v0.14.0
+   Compiling erased-serde v0.4.10
+   Compiling time v0.3.55
+   Compiling libc v0.2.189
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling phf v0.13.1
+   Compiling indexmap v2.14.2
+   Compiling schemars_derive v0.8.22
+   Compiling derive_more v2.1.1
+   Compiling foldhash v0.2.0
+   Compiling dyn-clone v1.0.20
+   Compiling serde-untagged v0.1.9
+   Compiling walkdir v2.5.0
+   Compiling thiserror v2.0.21
+   Compiling cssparser v0.37.0
+   Compiling infer v0.22.0
+   Compiling windows-implement v0.60.2
+   Compiling windows-interface v0.59.3
+   Compiling windows-strings v0.5.1
+   Compiling windows-result v0.4.1
+   Compiling critical-section v1.2.0
+   Compiling simd-adler32 v0.3.10
+   Compiling version_check v0.9.5
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling once_cell v1.21.4
+   Compiling markup5ever v0.39.0
+   Compiling adler2 v2.0.1
+   Compiling log v0.4.34
+   Compiling pin-project-lite v0.2.17
+   Compiling crc32fast v1.5.2
+   Compiling html5ever v0.39.0
+   Compiling vswhom-sys v0.1.3
+   Compiling windows-core v0.62.2
+   Compiling zerofrom v0.1.8
+   Compiling miniz_oxide v0.9.1
+   Compiling windows-targets v0.52.6
+   Compiling bitflags v2.13.2
+   Compiling windows-threading v0.2.1
+   Compiling option-ext v0.2.0
+   Compiling serde_json v1.0.151
+   Compiling percent-encoding v2.3.2
+   Compiling windows-sys v0.59.0
+   Compiling miniz_oxide v0.8.9
+   Compiling yoke v0.8.3
+   Compiling form_urlencoded v1.2.2
+   Compiling flate2 v1.1.10
+   Compiling tracing-core v0.1.36
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling serde v1.0.229
+   Compiling dom_query v0.28.0
+   Compiling windows-collections v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling windows-future v0.3.2
+   Compiling fdeflate v0.3.7
+   Compiling regex-automata v0.4.18
+   Compiling vswhom v0.1.0
+   Compiling rustc_version v0.4.1
+   Compiling tracing-attributes v0.1.31
+   Compiling dirs-sys v0.5.0
+   Compiling heck v0.5.0
+   Compiling tinystr v0.8.4
+   Compiling darling_macro v0.24.1
+   Compiling potential_utf v0.1.6
+   Compiling jsonptr v0.7.1
+   Compiling cargo-platform v0.1.9
+   Compiling icu_locale_core v2.3.0
+   Compiling icu_collections v2.3.0
+   Compiling cargo_metadata v0.19.2
+   Compiling plist v1.10.1
+   Compiling windows v0.62.2
+   Compiling cargo_toml v1.0.1
+   Compiling darling v0.24.1
+   Compiling json-patch v4.2.0
+   Compiling serde_with_macros v3.24.0
+   Compiling dirs v7.0.0
+   Compiling generic-array v0.14.7
+   Compiling time-macros v0.2.32
+   Compiling raw-window-handle v0.6.2
+   Compiling typenum v1.20.1
+   Compiling tracing v0.1.44
+   Compiling crossbeam-utils v0.8.23
+   Compiling webview2-com-sys v0.39.1
+   Compiling dpi v0.1.2
+   Compiling cookie v0.18.2
+   Compiling icu_provider v2.3.1
+   Compiling serde_with v3.24.0
+   Compiling winreg v0.55.0
+   Compiling mio v1.2.3
+   Compiling tokio-macros v2.7.2
+   Compiling winapi-util v0.1.11
+   Compiling icu_normalizer v2.3.0
+   Compiling icu_properties v2.3.0
+   Compiling embed-resource v3.0.11
+   Compiling socket2 v0.6.5
+   Compiling uuid v1.26.1
+   Compiling tauri-winres v0.3.6
+   Compiling crossbeam-channel v0.5.17
+   Compiling tokio v1.53.1
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling webview2-com-macros v0.8.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling serde_spanned v1.1.1
+   Compiling num-traits v0.2.19
+   Compiling windows-version v0.1.7
+   Compiling phf_shared v0.13.1
+   Compiling pkg-config v0.3.34
+   Compiling bitflags v1.3.2
+   Compiling vcpkg v0.2.15
+   Compiling png v0.17.16
+   Compiling toml v1.1.6+spec-1.1.0
+   Compiling digest v0.10.7
+   Compiling futures-sink v0.3.34
+   Compiling tauri-runtime v2.12.1
+   Compiling byteorder v1.5.0
+   Compiling futures-core v0.3.34
+   Compiling semver v1.0.28
+   Compiling libsqlite3-sys v0.38.2
+   Compiling getrandom v0.4.3
+   Compiling wry v0.57.0
+   Compiling cpufeatures v0.2.17
+   Compiling rand_core v0.10.1
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling ico v0.5.0
+   Compiling sha2 v0.10.9
+   Compiling futures-channel v0.3.34
+   Compiling url v2.5.8
+   Compiling png v0.18.1
+   Compiling futures-macro v0.3.34
+   Compiling unicode-segmentation v1.13.3
+   Compiling futures-task v0.3.34
+   Compiling urlpattern v0.6.0
+   Compiling muda v0.20.0
+   Compiling futures-io v0.3.34
+   Compiling slab v0.4.12
+   Compiling getrandom v0.3.4
+   Compiling tauri-runtime-wry v2.12.1
+   Compiling base64 v0.22.1
+   Compiling cpufeatures v0.3.1
+   Compiling futures-util v0.3.34
+   Compiling chacha20 v0.10.2
+   Compiling softbuffer v0.4.8
+   Compiling keyboard-types v0.8.3
+   Compiling hashlink v0.12.2
+   Compiling tauri-utils v2.10.1
+   Compiling serialize-to-javascript-impl v0.1.2
+   Compiling byteorder-lite v0.1.0
+   Compiling pxfm v0.1.30
+   Compiling quick-error v2.0.1
+   Compiling lazy_static v1.5.1
+   Compiling fallible-iterator v0.3.0
+   Compiling rusqlite_migration v2.6.0
+   Compiling windows_x86_64_msvc v0.53.1
+   Compiling zune-core v0.5.3
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling serialize-to-javascript v0.1.2
+   Compiling sharded-slab v0.1.7
+   Compiling image-webp v0.2.4
+   Compiling rand v0.10.3
+   Compiling zune-jpeg v0.5.15
+   Compiling window-vibrancy v0.8.1
+   Compiling matchers v0.2.0
+   Compiling tracing-log v0.2.0
+   Compiling rusqlite v0.40.2
+   Compiling serde_repr v0.1.21
+   Compiling nu-ansi-term v0.50.3
+   Compiling thread_local v1.1.10
+   Compiling bytemuck v1.25.2
+   Compiling tinyvec v1.13.3
+   Compiling mime v0.3.17
+   Compiling ipnet v2.12.2
+   Compiling mutate_once v0.1.2
+   Compiling data-encoding v2.11.1
+   Compiling kamadak-exif v0.6.1
+   Compiling tracing-subscriber v0.3.23
+   Compiling hickory-proto v0.26.3
+   Compiling chrono v0.4.45
+   Compiling async-trait v0.1.92
+   Compiling windows-targets v0.53.5
+   Compiling rfd v0.16.0
+   Compiling windows-sys v0.60.2
+   Compiling open v5.4.4
+   Compiling symlink v0.1.0
+   Compiling os_info v3.15.0
+   Compiling futures-executor v0.3.34
+   Compiling tracing-appender v0.2.5
+   Compiling futures v0.3.34
+   Compiling moxcms v0.8.1
+   Compiling tauri-build v2.7.1
+   Compiling tauri-plugin v2.7.1
+   Compiling tauri-codegen v2.7.1
+   Compiling image v0.25.10
+   Compiling tauri v2.12.1
+   Compiling tauri-plugin-fs v2.6.0
+   Compiling tauri-macros v2.7.1
+   Compiling tauri-plugin-dialog v2.8.1
+   Compiling tauri-plugin-opener v2.7.0
+   Compiling fresnel v0.5.0 (C:\Users\jonga\Documents\Projects\Fresnel\src-tauri)
+   Compiling tao v0.37.1
+   Compiling fresnel-core v0.5.0 (C:\Users\jonga\Documents\Projects\Fresnel\crates\fresnel-core)
+   Compiling webview2-com v0.39.1
+   Compiling tauri-plugin-single-instance v2.5.2
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 50s
+     Running unittests src\lib.rs (target\debug\deps\fresnel_lib-a0c5142d5baff722.exe)
+
+running 12 tests
+test logging::tests::log_file_names ... ok
+test commands::diagnostics::tests::clean_truncates_and_strips_control_characters ... ok
+test logging::tests::last_lines_drops_a_partial_first_line ... ok
+test commands::report::tests::suggested_names_are_sanitised ... ok
+2026-10-04T14:10:46.703530Z  INFO fresnel_lib::logging::tests: before the file layer
+2026-10-04T14:10:46.707756Z  INFO fresnel_lib::logging: logging to file dir=C:\Users\jonga\AppData\Local\Temp\fresnel-logs-25164
+2026-10-04T14:10:46.710964Z  INFO fresnel_lib::logging::tests: after the file layer
+test commands::report::tests::atomic_save_replaces_the_file ... ok
+2026-10-04T14:10:46.719390Z ERROR fresnel_lib::state: DATABASE IS DAMAGED: setting it aside and starting a new one path=C:\Users\jonga\AppData\Local\Temp\fresnel-state-corrupt-25164\fresnel.db detail=file is not a database
+2026-10-04T14:10:46.724720Z ERROR fresnel_lib::state: Fresnel's database was damaged (file is not a database). It was set aside as C:\Users\jonga\AppData\Local\Temp\fresnel-state-corrupt-25164\fresnel.db.corrupt-20261004T141046Z, C:\Users\jonga\AppData\Local\Temp\fresnel-state-corrupt-25164\floorplans.corrupt-20261004T141046Z, C:\Users\jonga\AppData\Local\Temp\fresnel-state-corrupt-25164\photos.corrupt-20261004T141046Z (its floor plans and photos), and a new, empty database was started.
+test logging::tests::file_layer_is_attached_after_startup ... ok
+2026-10-04T14:10:46.778452Z  INFO rusqlite_migration: Database migrated to version 8
+2026-10-04T14:10:46.778512Z  INFO fresnel_core::database: database schema migrated from=0 to=8
+2026-10-04T14:10:46.778581Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\Temp\fresnel-ipc-25164\fresnel.db version=8
+2026-10-04T14:10:46.782712Z  INFO rusqlite_migration: Database migrated to version 8
+2026-10-04T14:10:46.782764Z  INFO fresnel_core::database: database schema migrated from=0 to=8
+2026-10-04T14:10:46.782822Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\Temp\fresnel-ipc-brand-25164\fresnel.db version=8
+2026-10-04T14:10:46.784861Z  INFO rusqlite_migration: Database migrated to version 8
+2026-10-04T14:10:46.784895Z  INFO fresnel_core::database: database schema migrated from=0 to=8
+2026-10-04T14:10:46.784947Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\Temp\fresnel-state-healthy-25164\fresnel.db version=8
+2026-10-04T14:10:46.785881Z  INFO rusqlite_migration: Database migrated to version 8
+2026-10-04T14:10:46.785908Z  INFO fresnel_core::database: database schema migrated from=0 to=8
+2026-10-04T14:10:46.785962Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\Temp\fresnel-state-corrupt-25164\fresnel.db version=8
+2026-10-04T14:10:46.786958Z  INFO rusqlite_migration: Database migrated to version 8
+2026-10-04T14:10:46.786985Z  INFO fresnel_core::database: database schema migrated from=0 to=8
+2026-10-04T14:10:46.787034Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\Temp\fresnel-ipc-req-25164\fresnel.db version=8
+2026-10-04T14:10:46.790166Z  INFO rusqlite_migration: Database migrated to version 8
+2026-10-04T14:10:46.790196Z  INFO fresnel_core::database: database schema migrated from=0 to=8
+2026-10-04T14:10:46.790247Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\Temp\fresnel-ipc-photo-25164\fresnel.db version=8
+test state::tests::healthy_database_has_no_notice ... ok
+2026-10-04T14:10:46.800793Z  INFO fresnel_core::survey::filestore: floor plan stored file=plan-1791123046795230600-0.png bytes=26 mime="image/png"
+test state::tests::damaged_database_is_set_aside_with_its_plans ... ok
+test tests::requirement_profiles_over_ipc ... ok
+test tests::floor_plan_upload_and_download_over_ipc ... ok
+test tests::branding_over_ipc ... ok
+2026-10-04T14:10:47.065275Z  INFO fresnel_core::survey::filestore: photo stored file=photo-1791123047063398800-0.jpg bytes=9028 mime="image/jpeg"
+2026-10-04T14:10:47.066849Z  INFO fresnel_core::survey::filestore: photo stored file=photo-1791123047063398800-0-report.jpg bytes=9029 mime="image/jpeg"
+2026-10-04T14:10:47.068435Z  INFO fresnel_core::survey::filestore: photo stored file=photo-1791123047063398800-0-thumb.jpg bytes=1972 mime="image/jpeg"
+2026-10-04T14:10:47.076747Z  INFO fresnel_core::survey::filestore: removed unused photo files removed=3
+test tests::photo_upload_thumbnail_and_delete_over_ipc ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running unittests src\main.rs (target\debug\deps\fresnel-2ce87ad6ce01df82.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\fresnel_core-c82ce76863127ab0.exe)
+
+running 207 tests
+test adapters::windows_convert::tests::frequency_and_ie_bounds ... ok
+test adapters::windows_convert::tests::filetime_is_plausibility_checked ... ok
+test adapters::windows_convert::tests::rejects_derived_rssi ... ok
+test adapters::windows_convert::tests::rates_and_phy_band_evidence_are_honest ... ok
+test database::aps::tests::normalizes_bssids ... ok
+test adapters::registry::tests::no_providers_is_reported_as_unsupported ... ok
+test adapters::registry::tests::listing_carries_the_providers_scan_spacing ... ok
+test adapters::registry::tests::every_provider_down_reports_the_providers_error ... ok
+test adapters::registry::tests::no_adapters_anywhere_is_not_found_without_issues ... ok
+test adapters::registry::tests::a_failing_provider_does_not_hide_the_others ... ok
+test adapters::registry::tests::adapter_of_a_down_provider_reports_the_outage ... ok
+test adapters::registry::tests::first_registered_provider_wins_a_shared_adapter ... ok
+test adapters::registry::tests::provider_for_finds_a_hot_plugged_adapter ... ok
+test adapters::fake::tests::faults_strike_mid_scan_and_persist ... ok
+test adapters::fake::tests::replay_takes_as_long_as_the_recording_and_restamps_it ... ok
+test adapters::fake::tests::cached_steps_and_cached_requests_dont_scan ... ok
+test adapters::fake::tests::every_recording_parses ... ok
+test database::photos::tests::attach_list_update_delete ... ok
+test database::requirements::tests::bands_text_round_trips ... ok
+test database::photos::tests::photos_go_with_what_they_are_attached_to ... ok
+test database::findings::tests::anomalies_marks_and_findings_end_to_end ... ok
+test database::notes::tests::note_pins_crud_and_validation ... ok
+test database::aps::tests::crud_and_building_wide_uniqueness ... ok
+test database::projects::tests::rejects_empty_name ... ok
+test database::notes::tests::notes_round_trip_trimmed_and_capped ... ok
+test database::migrations::tests::migrations_are_valid ... ok
+test database::notes::tests::floor_annotations_collect_report_material ... ok
+test database::projects::tests::crud ... ok
+test database::point_tests::tests::unreadable_results_are_dropped_not_invented ... ok
+test database::requirements::tests::ap_targets_hidden_ssids_and_project_boundaries ... ok
+test database::marks::tests::set_replace_list_clear_and_cascade ... ok
+test database::tests::backup_names_sort_chronologically ... ok
+test database::tests::failed_backup_aborts_the_migration ... ok
+test database::photos::tests::schema_refuses_a_photo_on_two_things ... ok
+test database::findings::tests::detail_round_trips_and_old_rows_read_as_not_recorded ... ok
+test database::tests::open_errors_are_classified ... ok
+test database::point_tests::tests::round_trip_listing_and_cascade ... ok
+test database::requirements::tests::points_from_before_v4_have_unknown_adapter_bands ... ok
+test database::tests::only_the_newest_backups_are_kept ... ok
+test error::tests::hint_keeps_kind_and_message ... ok
+test nettools::binding::tests::linux_binding_from_connection ... ok
+test nettools::binding::tests::windows_adapter_guid_matching ... ok
+test nettools::dns::tests::inputs_are_checked ... ok
+test nettools::dns::tests::resolv_conf_nameservers ... ok
+test database::tests::a_file_that_is_not_a_database_is_corrupt ... ok
+test nettools::dns::tests::udp_tcp_and_truncation_retry ... ok
+test database::survey::tests::rejects_points_off_the_plan ... ok
+test nettools::iperf3::tests::busy_server_is_explained ... ok
+test database::survey::tests::duplicate_bssid_fails_instead_of_overwriting ... ok
+test database::survey::tests::scale_validation ... ok
+test nettools::iperf3::tests::config_limits_and_cookie ... ok
+test nettools::iperf3::tests::cancel_mid_test_tells_the_server ... ok
+test database::survey::tests::hierarchy_and_points_round_trip ... ok
+test database::requirements::tests::profiles_crud_and_a_single_default ... ok
+test database::survey::tests::cascade_delete_frees_plan_reference ... ok
+test nettools::iperf3::tests::real_iperf3_server ... ok
+test database::requirements::tests::target_options_list_project_ssids_and_aps ... ok
+test nettools::iperf3::tests::server_results_are_validated ... ok
+test database::requirements::tests::targets_and_floor_override_drive_evaluation ... ok
+test database::tool_runs::tests::store_list_attach_and_clear ... ok
+test nettools::ping::tests::stats_from_probes ... ok
+test nettools::ping::tests::tcp_probes_cancel ... ok
+test database::tests::new_database_is_not_backed_up ... ok
+test database::tests::upgrade_backs_up_the_old_schema_first ... ok
+test nettools::portcheck::tests::port_lists_parse ... ok
+test nettools::route::tests::longest_prefix_then_lowest_metric ... ok
+test nettools::route::tests::no_route_and_families ... ok
+test nettools::route::tests::parses_proc_tables_and_skips_junk ... ok
+test nettools::route::tests::windows_index_decision ... ok
+test database::tests::newer_schema_is_refused_with_a_clear_message ... ok
+test nettools::settings::tests::validation ... ok
+test nettools::target::tests::family_picks_the_first_matching_address ... ok
+test nettools::target::tests::hosts_are_checked ... ok
+test nettools::target::tests::literals_and_localhost_resolve ... ok
+test nettools::target::tests::loopback_egress_is_the_loopback_interface ... ok
+test nettools::settings::tests::round_trip_defaults_and_damage ... ok
+test nettools::tests::cancel_token_wakes_waiters_and_sleeps ... ok
+test nettools::tests::dropped_sender_never_cancels ... ok
+test nettools::traceroute::tests::hop_statistics ... ok
+test nettools::traceroute::tests::real_trace ... ignored
+test nettools::traceroute::tests::sequence_numbers_round_trip ... ok
+test settings::tests::branding_round_trip_and_validation ... ok
+test settings::tests::logo_is_sniffed_and_svg_refused ... ok
+test nettools::dns::tests::silent_server_times_out ... ok
+test survey::filestore::tests::checks_size_and_format ... ok
+test database::tool_runs::tests::history_is_pruned_per_tool ... ok
+test survey::filestore::tests::garbage_collection_keeps_referenced_and_foreign_files ... ok
+test survey::findings::tests::ap_key_matches_the_frontend_heuristic ... ok
+test survey::findings::tests::link_options_suggest_related_radios_and_a_position ... ok
+test survey::findings::tests::linked_bssid_with_another_ssid_or_security_than_usual ... ok
+test survey::filestore::tests::group_import_names_formats_and_rollback ... ok
+test survey::findings::tests::marks_and_probable_radios_are_not_unknown ... ok
+test survey::findings::tests::nothing_linked_says_so ... ok
+test survey::findings::tests::old_rows_compare_coarsely ... ok
+test survey::findings::tests::open_and_weaker_copies_are_security_mismatches ... ok
+test survey::findings::tests::other_bands_are_the_fallback_reference ... ok
+test survey::findings::tests::owe_transition_pair_is_expected ... ok
+test survey::findings::tests::personal_copy_of_an_enterprise_network_is_info ... ok
+test survey::findings::tests::six_ghz_sae_only_of_a_transition_network_is_expected ... ok
+test survey::findings::tests::two_frequencies_in_one_scan ... ok
+test survey::findings::tests::unknown_transmitter_on_a_project_ssid ... ok
+test survey::floorplan::tests::import_read_and_collect ... ok
+test survey::filestore::tests::retry_gives_up_on_permanent_errors_at_once ... ok
+test survey::floorplan::tests::sniffs_formats ... ok
+test survey::measure::tests::drops_bsses_not_heard_during_the_scan ... ok
+test survey::measure::tests::empty_scan_is_a_valid_dead_zone ... ok
+test survey::floorplan::tests::import_replaces_or_rolls_back ... ok
+test survey::measure::tests::end_to_end::a_different_stick_under_the_same_name_is_a_mismatch ... ok
+test survey::measure::tests::end_to_end::adapter_mismatch_on_a_floor_is_reported ... ok
+test survey::measure::tests::end_to_end::adapter_vanishing_mid_measure_stores_nothing ... ok
+test survey::measure::tests::end_to_end::cached_results_are_never_stored ... ok
+test survey::measure::tests::end_to_end::duplicate_bssid_keeps_the_named_reading ... ok
+test survey::floorplan::tests::collection_waits_for_an_import_in_progress ... ok
+test survey::measure::tests::end_to_end::gives_up_when_every_scan_hears_only_the_connected_ap ... ok
+test survey::measure::tests::end_to_end::retries_a_scan_that_heard_only_the_connected_ap ... ok
+test survey::measure::tests::end_to_end::missing_adapter_dead_service_or_radio_off_fail_cleanly ... ok
+test survey::measure::tests::end_to_end::faults_mid_measure_give_typed_errors_and_store_nothing ... ok
+test survey::measure::tests::end_to_end::saves_a_dead_zone_once_remembered_networks_age_out ... ok
+test survey::measure::tests::end_to_end::slow_scan_keeps_what_it_heard_during_its_window ... ok
+test survey::measure::tests::flags_fresh_bsses_missing_dbm ... ok
+test survey::measure::tests::flags_scans_that_heard_only_the_associated_ap ... ok
+test survey::measure::tests::keeps_one_reading_per_bssid ... ok
+test survey::measure::tests::refuses_when_freshness_is_unknowable ... ok
+test survey::measure::tests::same_radio_needs_matching_hardware_when_known ... ok
+test survey::measure::tests::unknown_values_rank_below_known_ones ... ok
+test survey::measure::tests::end_to_end::stale_entries_are_not_stored ... ok
+test survey::measure::tests::end_to_end::stores_a_normal_scan_as_recorded ... ok
+test nettools::tests::blocking_work_has_a_deadline ... ok
+test survey::photos::tests::decoder_limits_refuse_huge_images ... ok
+test survey::photos::tests::sniffs_photo_formats ... ok
+test survey::photos::tests::transparent_png_goes_onto_white ... ok
+test survey::point_tests::tests::plan_follows_settings ... ok
+test survey::point_tests::tests::total_loss_is_a_failure_with_reasons ... ok
+test survey::point_tests::tests::with_provider::cancelled_before_start_runs_nothing ... ok
+test survey::point_tests::tests::with_provider::refuses_old_points_and_disconnected_adapters ... ok
+test survey::requirements::tests::ap_key_matches_the_ui_heuristic ... ok
+test survey::requirements::tests::ap_targets_match_hidden_ssids_by_bssid ... ok
+test survey::requirements::tests::co_channel_counts_radios_on_overlapping_spans ... ok
+test survey::requirements::tests::co_channel_with_unknown_width_uses_the_primary_channel_and_says_so ... ok
+test survey::requirements::tests::dead_zone_fails_but_percent_only_is_never_failed ... ok
+test survey::requirements::tests::no_targets_means_not_evaluated ... ok
+test survey::requirements::tests::passes_with_strong_primary_and_a_second_ap ... ok
+test survey::requirements::tests::presets_validate_and_changed_values_become_custom ... ok
+test survey::requirements::tests::required_band_depends_on_what_the_card_can_receive ... ok
+test survey::requirements::tests::secondary_must_be_another_physical_ap_on_the_same_band_and_ssid ... ok
+test survey::requirements::tests::snr_and_utilisation_only_where_reported ... ok
+test survey::requirements::tests::summary_counts_points_rules_and_adapters ... ok
+test survey::requirements::tests::targets_serialise_with_a_kind_tag ... ok
+test survey::requirements::tests::two_four_ghz_overlap_follows_the_spans ... ok
+test survey::requirements::tests::weak_primary_fails_and_names_the_rule ... ok
+test nettools::iperf3::tests::not_an_iperf3_server ... ok
+test tools::run::tests::port_check_events_are_flat ... ok
+test tools::run::tests::trace_events_are_flat_and_via_parses ... ok
+test nettools::iperf3::tests::server_error_reports_its_code ... ok
+test wifi::channel::tests::band_2_4 ... ok
+test wifi::channel::tests::band_5 ... ok
+test wifi::channel::tests::band_6 ... ok
+test wifi::channel::tests::band_60 ... ok
+test wifi::channel::tests::centers ... ok
+test wifi::channel::tests::channel_to_frequency_round_trips ... ok
+test wifi::channel::tests::unknown ... ok
+test wifi::ies::tests::eht_320 ... ok
+test wifi::ies::tests::enterprise ... ok
+test survey::photos::tests::applies_orientation_and_strips_metadata ... ok
+test wifi::ies::tests::he_6ghz ... ok
+test wifi::ies::tests::ht_operation_offset ... ok
+test wifi::ies::tests::ht_width_2ghz ... ok
+test tools::run::tests::typing_mistakes_are_not_stored_but_failures_are ... ok
+test wifi::ies::tests::malformed_rsn ... ok
+test wifi::ies::tests::multi_link_mld_address ... ok
+test wifi::ies::tests::open_and_wep_without_elements ... ok
+test wifi::ies::tests::owe_and_transition ... ok
+test wifi::ies::tests::parses_generation_and_bss_load ... ok
+test wifi::ies::tests::truncated_input_is_safe ... ok
+test wifi::ies::tests::unknown_suites_are_kept ... ok
+test wifi::ies::tests::vht_160_and_80_80 ... ok
+test wifi::ies::tests::vht_80 ... ok
+test wifi::ies::tests::vht_on_2ghz_is_not_wifi5 ... ok
+test wifi::ies::tests::wpa2_psk ... ok
+test wifi::ies::tests::wpa2_wpa3_transition_pmf_capable ... ok
+test wifi::ies::tests::wpa3_sae_pmf_required ... ok
+test wifi::ies::tests::wpa_vendor_element_and_mixed_mode ... ok
+test wifi::scanner::tests::errors_pass_through_and_release_the_adapter ... ok
+test wifi::scanner::tests::hung_connection_query_times_out ... ok
+test wifi::scanner::tests::no_spacing_unless_the_provider_asks ... ok
+test wifi::scanner::tests::hung_scan_times_out_and_the_next_scan_runs ... ok
+test wifi::scanner::tests::scan_waiting_behind_a_hung_one_runs_after_the_deadline ... ok
+test wifi::scanner::tests::spacing_does_not_count_against_the_deadline ... ok
+test wifi::security::tests::enterprise ... ok
+test wifi::scanner::tests::triggered_scans_stay_spaced_apart ... ok
+test wifi::security::tests::open_and_wep ... ok
+test wifi::security::tests::personal ... ok
+test wifi::security::tests::unknown_suites ... ok
+test wifi::ies::tests::garbage_never_panics ... ok
+test survey::photos::tests::import_stores_three_files_and_refuses_heic ... ok
+test tools::run::tests::ping_over_the_system_route_is_stored_with_events ... ok
+test nettools::iperf3::tests::silent_server_times_out ... ok
+test nettools::iperf3::tests::download_counts_received_bytes_and_server_retransmits ... ok
+test nettools::iperf3::tests::upload_uses_the_servers_receiver_bytes ... ok
+test nettools::iperf3::tests::omitted_seconds_are_requested ... ok
+test nettools::iperf3::tests::refused_connection_blames_the_server_firewall ... ok
+test nettools::portcheck::tests::open_and_closed_ports ... ok
+test nettools::ping::tests::tcp_probes_time_accepts_and_resets ... ok
+test nettools::iperf3::tests::abrupt_close_in_every_phase ... ok
+test database::tests::damaged_pages_are_reported_corrupt ... ok
+test nettools::iperf3::tests::malformed_and_oversize_json_are_refused ... ok
+test survey::photos::tests::downscales_large_photos_and_keeps_small_ones ... ok
+
+test result: ok. 206 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 5.39s
+
+   Doc-tests fresnel_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fresnel_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

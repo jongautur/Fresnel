@@ -1,0 +1,65 @@
+2026-10-04T13:21:08.482347Z  INFO fresnel_lib::logging: logging to file dir=C:\Users\jonga\AppData\Local\io.fresnel.app\logs
+2026-10-04T13:21:08.482451Z  INFO fresnel_lib: starting Fresnel version="0.5.0"
+2026-10-04T13:21:08.497099Z  INFO rusqlite_migration: Database migrated to version 8
+2026-10-04T13:21:08.497136Z  INFO fresnel_core::database: database schema migrated from=0 to=8
+2026-10-04T13:21:08.497471Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\io.fresnel.app\fresnel.db version=8
+2026-10-04T13:21:10.990916Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=17 elapsed_ms=2369
+2026-10-04T13:21:18.303889Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=18 elapsed_ms=1776
+2026-10-04T13:53:26.737577Z  INFO fresnel_lib::logging: logging to file dir=C:\Users\jonga\AppData\Local\io.fresnel.app\logs
+2026-10-04T13:53:26.737676Z  INFO fresnel_lib: starting Fresnel version="0.5.0"
+2026-10-04T13:53:26.740105Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\io.fresnel.app\fresnel.db version=8
+2026-10-04T13:53:26.893905Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=9 elapsed_ms=21
+2026-10-04T13:53:34.255235Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=16 elapsed_ms=3337
+2026-10-04T13:54:06.609299Z  INFO fresnel_core::tools::run: tool run done kind=Ping target=1.1.1.1 status=Stopped
+2026-10-04T13:54:10.240701Z  WARN fresnel_core::tools::run: tool run failed kind=Ping target=1.1.1.1 error=Adapter 'Wi-Fi' is unavailable: traffic to 1.1.1.1 would leave through “Ethernet 2”, not the Wi-Fi interface; the test was not run
+2026-10-04T13:54:42.395361Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=16 elapsed_ms=559
+2026-10-04T14:19:40.398398Z  INFO fresnel_lib: another launch; focusing the existing window
+2026-10-04T19:27:49.350731Z  INFO fresnel_lib::logging: logging to file dir=C:\Users\jonga\AppData\Local\io.fresnel.app\logs
+2026-10-04T19:27:49.351006Z  INFO fresnel_lib: starting Fresnel version="0.5.0"
+2026-10-04T19:27:49.362357Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\io.fresnel.app\fresnel.db version=8
+2026-10-04T19:27:53.915019Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=11 elapsed_ms=24
+2026-10-04T19:28:16.850979Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=11 elapsed_ms=3840
+2026-10-04T19:30:36.251249Z  INFO fresnel_core::survey::filestore: floor plan stored file=plan-1791142236249480600-0.png bytes=7651 mime="image/png"
+2026-10-04T19:30:43.252342Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=13 elapsed_ms=3804
+2026-10-04T19:30:43.252588Z  INFO fresnel_core::survey::measure: measured survey point floor=1 adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 heard=13 listed=13
+2026-10-04T19:30:53.100695Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=14 elapsed_ms=3714
+2026-10-04T19:30:53.100947Z  INFO fresnel_core::survey::measure: measured survey point floor=1 adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 heard=9 listed=14
+2026-10-04T19:31:35.008145Z  INFO fresnel_lib::commands::report: export saved path=C:\Users\jonga\Documents\test survey test.html
+2026-10-04T19:32:02.235356Z  INFO fresnel_core::tools::run: tool run done kind=Ping target=1.1.1.1 status=Ok
+2026-10-04T19:32:06.578655Z  WARN fresnel_core::tools::run: tool run failed kind=Ping target=1.1.1.1 error=Adapter 'Wi-Fi' is unavailable: traffic to 1.1.1.1 would leave through “Ethernet 2”, not the Wi-Fi interface; the test was not run
+2026-10-04T19:32:36.365300Z  INFO fresnel_core::tools::run: tool run done kind=Ping target=1.1.1.1 status=Ok
+2026-10-04T19:32:51.814857Z  INFO fresnel_core::tools::run: tool run done kind=Traceroute target=siminn.is status=Ok
+2026-10-04T19:33:13.815438Z  INFO fresnel_core::tools::run: tool run done kind=Traceroute target=siminn.is status=Stopped
+2026-10-04T19:33:17.262369Z  WARN fresnel_core::tools::run: tool run failed kind=Traceroute target=siminn.is error=Not supported: UDP traceroute needs administrator rights on this OS; use ICMP
+2026-10-04T19:36:18.757331Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:38:17.326406Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:42:47.509287Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:44:12.694195Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:44:33.094941Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:45:47.078119Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:45:56.292086Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:46:03.834364Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:46:09.004367Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.12 error=Timed out: no answer from 192.168.1.12:5201
+2026-10-04T19:47:01.512299Z  INFO fresnel_core::tools::run: tool run done kind=PortCheck target=192.168.1.12 status=Ok
+2026-10-04T19:48:26.906859Z  INFO fresnel_core::tools::run: tool run done kind=PortCheck target=192.168.1.3 status=Ok
+2026-10-04T19:48:53.464047Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.3 error=the iperf3 server closed the connection during the start of the test
+2026-10-04T19:53:06.020217Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.28 error=the iperf3 server closed the connection during the start of the test
+2026-10-04T19:53:51.100670Z  INFO fresnel_core::tools::run: tool run done kind=PortCheck target=192.168.1.28 status=Ok
+2026-10-04T19:53:59.866615Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.28 error=the iperf3 server closed the connection during the start of the test
+2026-10-04T19:55:51.959779Z  INFO fresnel_core::tools::run: tool run done kind=Iperf3 target=192.168.1.28 status=Ok
+2026-10-04T19:56:01.060148Z  INFO fresnel_core::tools::run: tool run done kind=Iperf3 target=192.168.1.28 status=Ok
+2026-10-04T19:56:12.951233Z  INFO fresnel_lib::logging: logging to file dir=C:\Users\jonga\AppData\Local\io.fresnel.app\logs
+2026-10-04T19:56:12.951486Z  INFO fresnel_lib: starting Fresnel version="0.5.0"
+2026-10-04T19:56:12.959871Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\io.fresnel.app\fresnel.db version=8
+2026-10-04T19:56:13.202645Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=0 elapsed_ms=21
+2026-10-04T19:56:19.210664Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.28 error=the iperf3 server closed the connection during the start of the test
+2026-10-04T19:56:23.334329Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.28 error=the iperf3 server is busy with another test
+2026-10-04T19:56:28.452735Z  INFO fresnel_core::tools::run: tool run done kind=PortCheck target=192.168.1.28 status=Ok
+2026-10-04T19:56:30.826888Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.28 error=the iperf3 server closed the connection during the start of the test
+2026-10-04T19:58:21.581358Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.28 error=the iperf3 server is busy with another test
+2026-10-04T19:58:35.443324Z  INFO fresnel_core::tools::run: tool run done kind=Iperf3 target=192.168.1.28 status=Ok
+2026-10-04T19:58:42.715192Z  WARN fresnel_core::tools::run: tool run failed kind=Iperf3 target=192.168.1.28 error=the iperf3 server closed the connection during the start of the test
+2026-10-04T20:00:37.537061Z  INFO fresnel_lib::logging: logging to file dir=C:\Users\jonga\AppData\Local\io.fresnel.app\logs
+2026-10-04T20:00:37.537307Z  INFO fresnel_lib: starting Fresnel version="0.5.0"
+2026-10-04T20:00:37.546506Z  INFO fresnel_core::database: database ready path=C:\Users\jonga\AppData\Local\io.fresnel.app\fresnel.db version=8
+2026-10-04T20:00:37.795312Z  INFO fresnel_core::wifi::scanner: scan finished adapter=windows:6e27177d-2441-4407-8261-fc7e41c65a32 provider="windows-native-wifi" count=0 elapsed_ms=26

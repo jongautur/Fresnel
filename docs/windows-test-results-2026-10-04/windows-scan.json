@@ -1,0 +1,737 @@
+{
+  "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+  "provider": "windows-native-wifi",
+  "startedAt": "2026-10-04T14:15:27.647265Z",
+  "completedAt": "2026-10-04T14:15:31.503924300Z",
+  "scanTriggered": true,
+  "notice": null,
+  "accessPoints": [
+    {
+      "timestamp": "2026-10-04T14:15:31.503919600Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "78:20:51:37:70:62",
+      "mldAddress": null,
+      "ssid": "Netið",
+      "ssidRaw": [
+        78,
+        101,
+        116,
+        105,
+        195,
+        176
+      ],
+      "hidden": false,
+      "frequencyMhz": 5320,
+      "channel": 64,
+      "band": "5ghz",
+      "channelWidthMhz": 160,
+      "channelCenterMhz": 5250,
+      "signal": {
+        "dbm": -34.0,
+        "qualityPercent": 98
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 123,
+      "isConnected": true,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11be",
+      "wifiGeneration": 7
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503913600Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "7E:20:51:37:70:62",
+      "mldAddress": null,
+      "ssid": null,
+      "ssidRaw": [],
+      "hidden": true,
+      "frequencyMhz": 5320,
+      "channel": 64,
+      "band": "5ghz",
+      "channelWidthMhz": 160,
+      "channelCenterMhz": 5250,
+      "signal": {
+        "dbm": -34.0,
+        "qualityPercent": 98
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 123,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11be",
+      "wifiGeneration": 7
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503908400Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "82:20:51:37:70:62",
+      "mldAddress": null,
+      "ssid": null,
+      "ssidRaw": [],
+      "hidden": true,
+      "frequencyMhz": 5320,
+      "channel": 64,
+      "band": "5ghz",
+      "channelWidthMhz": 160,
+      "channelCenterMhz": 5250,
+      "signal": {
+        "dbm": -34.0,
+        "qualityPercent": 98
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 123,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11be",
+      "wifiGeneration": 7
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503900700Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "86:20:51:37:70:62",
+      "mldAddress": "78:20:51:37:70:63",
+      "ssid": "Netid_MLO",
+      "ssidRaw": [
+        78,
+        101,
+        116,
+        105,
+        100,
+        95,
+        77,
+        76,
+        79
+      ],
+      "hidden": false,
+      "frequencyMhz": 5320,
+      "channel": 64,
+      "band": "5ghz",
+      "channelWidthMhz": 160,
+      "channelCenterMhz": 5250,
+      "signal": {
+        "dbm": -34.0,
+        "qualityPercent": 98
+      },
+      "security": {
+        "kind": "wpa3_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "sae"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "required"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 123,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11be",
+      "wifiGeneration": 7
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503886900Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "78:20:51:37:70:60",
+      "mldAddress": null,
+      "ssid": "Netið",
+      "ssidRaw": [
+        78,
+        101,
+        116,
+        105,
+        195,
+        176
+      ],
+      "hidden": false,
+      "frequencyMhz": 2412,
+      "channel": 1,
+      "band": "2.4ghz",
+      "channelWidthMhz": 20,
+      "channelCenterMhz": 2412,
+      "signal": {
+        "dbm": -37.0,
+        "qualityPercent": 96
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 3770,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11be",
+      "wifiGeneration": 7
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503892Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "86:20:51:37:70:60",
+      "mldAddress": "78:20:51:37:70:63",
+      "ssid": "Netid_MLO",
+      "ssidRaw": [
+        78,
+        101,
+        116,
+        105,
+        100,
+        95,
+        77,
+        76,
+        79
+      ],
+      "hidden": false,
+      "frequencyMhz": 2412,
+      "channel": 1,
+      "band": "2.4ghz",
+      "channelWidthMhz": 20,
+      "channelCenterMhz": 2412,
+      "signal": {
+        "dbm": -37.0,
+        "qualityPercent": 96
+      },
+      "security": {
+        "kind": "wpa3_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "sae"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "required"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 3681,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11be",
+      "wifiGeneration": 7
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503880900Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "22:20:61:05:48:D4",
+      "mldAddress": null,
+      "ssid": "H168-383_4805",
+      "ssidRaw": [
+        72,
+        49,
+        54,
+        56,
+        45,
+        51,
+        56,
+        51,
+        95,
+        52,
+        56,
+        48,
+        53
+      ],
+      "hidden": false,
+      "frequencyMhz": 5500,
+      "channel": 100,
+      "band": "5ghz",
+      "channelWidthMhz": 160,
+      "channelCenterMhz": 5570,
+      "signal": {
+        "dbm": -62.0,
+        "qualityPercent": 80
+      },
+      "security": {
+        "kind": "wpa2_wpa3_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk",
+          "sae"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "capable"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 2058,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": 0.39215687,
+      "stationCount": 2,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11ax",
+      "wifiGeneration": 6
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503859800Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "22:20:61:05:48:D0",
+      "mldAddress": "22:20:61:05:48:D7",
+      "ssid": "H168-383_4805",
+      "ssidRaw": [
+        72,
+        49,
+        54,
+        56,
+        45,
+        51,
+        56,
+        51,
+        95,
+        52,
+        56,
+        48,
+        53
+      ],
+      "hidden": false,
+      "frequencyMhz": 5200,
+      "channel": 40,
+      "band": "5ghz",
+      "channelWidthMhz": 160,
+      "channelCenterMhz": 5250,
+      "signal": {
+        "dbm": -63.0,
+        "qualityPercent": 80
+      },
+      "security": {
+        "kind": "wpa2_wpa3_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk",
+          "sae"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "capable"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 2642,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": 2.745098,
+      "stationCount": 0,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11be",
+      "wifiGeneration": 7
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503854Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "10:2B:AA:4F:A3:3C",
+      "mldAddress": null,
+      "ssid": "DIRECT-WISA:0:56505F2CC5B56502",
+      "ssidRaw": [
+        68,
+        73,
+        82,
+        69,
+        67,
+        84,
+        45,
+        87,
+        73,
+        83,
+        65,
+        58,
+        48,
+        58,
+        53,
+        54,
+        53,
+        48,
+        53,
+        70,
+        50,
+        67,
+        67,
+        53,
+        66,
+        53,
+        54,
+        53,
+        48,
+        50
+      ],
+      "hidden": false,
+      "frequencyMhz": 5745,
+      "channel": 149,
+      "band": "5ghz",
+      "channelWidthMhz": 80,
+      "channelCenterMhz": 5775,
+      "signal": {
+        "dbm": -65.0,
+        "qualityPercent": 79
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 1071,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11ax",
+      "wifiGeneration": 6
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503844600Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "9C:53:22:18:BF:6F",
+      "mldAddress": null,
+      "ssid": "Lerf net",
+      "ssidRaw": [
+        76,
+        101,
+        114,
+        102,
+        32,
+        110,
+        101,
+        116
+      ],
+      "hidden": false,
+      "frequencyMhz": 2452,
+      "channel": 9,
+      "band": "2.4ghz",
+      "channelWidthMhz": 20,
+      "channelCenterMhz": 2452,
+      "signal": {
+        "dbm": -68.0,
+        "qualityPercent": 77
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 3122,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11ax",
+      "wifiGeneration": 6
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503849100Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "BE:53:22:18:BF:6F",
+      "mldAddress": null,
+      "ssid": null,
+      "ssidRaw": [],
+      "hidden": true,
+      "frequencyMhz": 2452,
+      "channel": 9,
+      "band": "2.4ghz",
+      "channelWidthMhz": 20,
+      "channelCenterMhz": 2452,
+      "signal": {
+        "dbm": -68.0,
+        "qualityPercent": 77
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 3122,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11ax",
+      "wifiGeneration": 6
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503839100Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "DE:53:22:18:BF:6F",
+      "mldAddress": null,
+      "ssid": "TP-Link_IoT_2G",
+      "ssidRaw": [
+        84,
+        80,
+        45,
+        76,
+        105,
+        110,
+        107,
+        95,
+        73,
+        111,
+        84,
+        95,
+        50,
+        71
+      ],
+      "hidden": false,
+      "frequencyMhz": 2452,
+      "channel": 9,
+      "band": "2.4ghz",
+      "channelWidthMhz": 20,
+      "channelCenterMhz": 2452,
+      "signal": {
+        "dbm": -69.0,
+        "qualityPercent": 76
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp",
+          "tkip"
+        ],
+        "groupCiphers": [
+          "tkip"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 3122,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11ax",
+      "wifiGeneration": 6
+    },
+    {
+      "timestamp": "2026-10-04T14:15:31.503821300Z",
+      "adapterId": "windows:6e27177d-2441-4407-8261-fc7e41c65a32",
+      "bssid": "9C:53:22:18:BF:6E",
+      "mldAddress": null,
+      "ssid": "Lerf net",
+      "ssidRaw": [
+        76,
+        101,
+        114,
+        102,
+        32,
+        110,
+        101,
+        116
+      ],
+      "hidden": false,
+      "frequencyMhz": 5220,
+      "channel": 44,
+      "band": "5ghz",
+      "channelWidthMhz": 80,
+      "channelCenterMhz": 5210,
+      "signal": {
+        "dbm": -75.0,
+        "qualityPercent": 60
+      },
+      "security": {
+        "kind": "wpa2_personal",
+        "privacy": true,
+        "wpa": false,
+        "rsn": true,
+        "akms": [
+          "psk"
+        ],
+        "pairwiseCiphers": [
+          "ccmp"
+        ],
+        "groupCiphers": [
+          "ccmp"
+        ],
+        "groupMgmtCipher": null,
+        "pmf": "disabled"
+      },
+      "mode": "infrastructure",
+      "maxBitrateKbps": null,
+      "lastSeenAgeMs": 2575,
+      "isConnected": false,
+      "noiseDbm": null,
+      "snrDb": null,
+      "channelUtilizationPct": null,
+      "stationCount": null,
+      "beaconIntervalTu": 100,
+      "phyType": "802.11ax",
+      "wifiGeneration": 6
+    }
+  ]
+}

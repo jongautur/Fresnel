@@ -1,0 +1,248 @@
+﻿ 
+Interface name : Wi-Fi 
+There are 8 networks currently visible. 
+
+SSID 1 : 
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : be:53:22:18:bf:6e
+         Signal             : 57%  
+         Radio type         : 802.11ax
+         Band               : 5 GHz
+         Channel            : 44 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+    BSSID 2                 : 56:ef:44:87:98:62
+         Signal             : 78%  
+         Radio type         : 802.11b
+         Band               : 2.4 GHz
+         Channel            : 9 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2
+         Other rates (Mbps) : 5.5 11
+    BSSID 3                 : 82:20:51:37:70:60
+         Signal             : 95%  
+         Radio type         : 802.11be
+         Band               : 2.4 GHz
+         Channel            : 1 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+    BSSID 4                 : 7e:20:51:37:70:60
+         Signal             : 95%  
+         Radio type         : 802.11be
+         Band               : 2.4 GHz
+         Channel            : 1 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+    BSSID 5                 : 82:20:51:37:70:62
+         Signal             : 98%  
+         Radio type         : 802.11be
+         Band               : 5 GHz
+         Channel            : 64 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+    BSSID 6                 : 7e:20:51:37:70:62
+         Signal             : 98%  
+         Radio type         : 802.11be
+         Band               : 5 GHz
+         Channel            : 64 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+    BSSID 7                 : be:53:22:18:bf:6f
+         Signal             : 77%  
+         Radio type         : 802.11ax
+         Band               : 2.4 GHz
+         Channel            : 9 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+
+SSID 2 : Lerf net
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : 9c:53:22:18:bf:6e
+         Signal             : 57%  
+         Radio type         : 802.11ax
+         Band               : 5 GHz
+         Channel            : 44 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+    BSSID 2                 : 9c:53:22:18:bf:6f
+         Signal             : 77%  
+         Radio type         : 802.11ax
+         Band               : 2.4 GHz
+         Channel            : 9 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+
+SSID 3 : NOVA-VQZ9WV
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : 2a:fb:ae:16:8c:30
+         Signal             : 57%  
+         Radio type         : 802.11ax
+         Band               : 2.4 GHz
+         Channel            : 6 
+         Bss Load:
+             Connected Stations:         2
+             Channel Utilization:        19 (7 %)
+             Medium Available Capacity:  31250 (1000000 us/s)
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+
+SSID 4 : TP-Link_IoT_2G
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : de:53:22:18:bf:6f
+         Signal             : 77%  
+         Radio type         : 802.11ax
+         Band               : 2.4 GHz
+         Channel            : 9 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+
+SSID 5 : H168-383_4805
+    Network type            : Infrastructure
+    Authentication          : WPA3-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : 22:20:61:05:48:ca
+         Signal             : 79%  
+         Radio type         : 802.11be
+         Band               : 2.4 GHz
+         Channel            : 9 
+         Details            :  (H2E supported)  (MLD) 
+         Bss Load:
+             Connected Stations:         1
+             Channel Utilization:        49 (19 %)
+             Medium Available Capacity:  31250 (1000000 us/s)
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         MLD Address        : 22:20:61:05:48:d7
+         Colocated APs:    : 1
+            MldID : 0, LinkID: 1, BSSID: 22:20:61:05:48:d0,  Band: 5 GHz,  Channel: 36
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+    BSSID 2                 : 22:20:61:05:48:d0
+         Signal             : 80%  
+         Radio type         : 802.11be
+         Band               : 5 GHz
+         Channel            : 36 
+         Details            :  (H2E supported)  (MLD) 
+         Bss Load:
+             Connected Stations:         0
+             Channel Utilization:        8 (3 %)
+             Medium Available Capacity:  31250 (1000000 us/s)
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         MLD Address        : 22:20:61:05:48:d7
+         Colocated APs:    : 1
+            MldID : 0, LinkID: 0, BSSID: 22:20:61:05:48:ca,  Band: 2.4 GHz,  Channel: 9
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+    BSSID 3                 : 22:20:61:05:48:d4
+         Signal             : 81%  
+         Radio type         : 802.11ax
+         Band               : 5 GHz
+         Channel            : 100 
+         Details            :  (H2E supported) 
+         Bss Load:
+             Connected Stations:         2
+             Channel Utilization:        1 (0 %)
+             Medium Available Capacity:  31250 (1000000 us/s)
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+
+SSID 6 : DIRECT-WISA:0:56505F2CC5B56502
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : 10:2b:aa:4f:a3:3c
+         Signal             : 82%  
+         Radio type         : 802.11ax
+         Band               : 5 GHz
+         Channel            : 149 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+
+SSID 7 : Netid_MLO
+    Network type            : Infrastructure
+    Authentication          : WPA3-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : 86:20:51:37:70:60
+         Signal             : 95%  
+         Radio type         : 802.11be
+         Band               : 2.4 GHz
+         Channel            : 1 
+         Details            :  (H2E supported)  (MLD) 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         MLD Address        : 78:20:51:37:70:63
+         Colocated APs:    : 1
+            MldID : 0, LinkID: 1, BSSID: 86:20:51:37:70:62,  Band: 5 GHz,  Channel: 64
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+    BSSID 2                 : 86:20:51:37:70:62
+         Signal             : 98%  
+         Radio type         : 802.11be
+         Band               : 5 GHz
+         Channel            : 64 
+         Details            :  (H2E supported)  (MLD) 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         MLD Address        : 78:20:51:37:70:63
+         Colocated APs:    : 1
+            MldID : 0, LinkID: 0, BSSID: 86:20:51:37:70:60,  Band: 2.4 GHz,  Channel: 1
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+
+SSID 8 : Netið
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP 
+    BSSID 1                 : 78:20:51:37:70:60
+         Signal             : 95%  
+         Radio type         : 802.11be
+         Band               : 2.4 GHz
+         Channel            : 1 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+    BSSID 2                 : 78:20:51:37:70:62
+         Signal             : 98%  
+         Radio type         : 802.11be
+         Band               : 5 GHz
+         Channel            : 64 
+         QoS MSCS Supported    : 0
+         QoS Map Supported     : 0
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+
