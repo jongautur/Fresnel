@@ -176,10 +176,11 @@ export function ExportDialog({
       const label = `${f.building.name} / ${f.floor.name}`;
       step(`Loading ${label} (${i + 1} of ${l.floors.length})…`, i, l.floors.length);
       try {
-        const [annotations, requirements, plan] = await Promise.all([
+        const [annotations, requirements, plan, pointTests] = await Promise.all([
           api.floorAnnotations(f.floor.id),
           api.evaluateFloorRequirements(f.floor.id),
           f.floor.plan ? api.floorPlanImage(f.floor.id) : Promise.resolve(null),
+          api.listFloorPointTests(f.floor.id),
         ]);
         const photoData = new Map<number, string>();
         for (const p of annotations.photos) photoData.set(p.id, dataUri("image/jpeg", await api.photoReportImage(p.id)));
@@ -187,6 +188,7 @@ export function ExportDialog({
           ...f,
           annotations,
           requirements,
+          pointTests,
           planData: plan && f.floor.plan ? dataUri(f.floor.plan.mime, plan) : null,
           photoData,
         });

@@ -171,12 +171,28 @@ const findings = {
   marks: [], limits: [],
 };
 
+// Active tests at two points of floor 1: speeds, and a hostile link PHY string.
+const link = { connected: true, iface: "wlan0", bssid: "AA:BB:CC:00:00:01", frequencyMhz: 5180, signalDbm: -55, txKbps: 866700, rxKbps: null, phy: "VHT<b>", mcs: 9, nss: 2, widthMhz: 80 };
+const pointTest = (id, pointId, role, results, status = "ok") => ({
+  id, pointId, kind: role === "gateway" ? "ping" : "iperf3", target: "192.168.1.10", role,
+  method: role === "gateway" ? "icmp" : "iperf3_tcp", status, startedAt: now, durationMs: 1000,
+  adapterId: "linux:wlan0", link, linkAfter: null, roamed: null, results, error: status === "ok" ? null : "busy", errorHint: null,
+});
+const iperf = (direction, mbps) => ({ type: "iperf3", version: 1, direction, server: "192.168.1.10:5201", streams: 4, durationS: 5, omitS: 1, bitsPerSecond: mbps * 1e6, receiverBytes: 0, receiverSeconds: 5, measuredBy: "server", senderBytes: null, retransmits: 12, retransmitsSource: "server", intervals: [] });
+const ping = { type: "ping", version: 1, method: "icmp", port: null, sent: 10, received: 10, lossPercent: 0, minMs: 2, avgMs: 2.4, maxMs: 3, jitterMs: 0.5, resolutionMs: null, fallbackReason: null, probes: [] };
+const floor1Tests = [
+  pointTest(1, floor1Points[0].id, "gateway", ping),
+  pointTest(2, floor1Points[0].id, "iperf3_download", iperf("download", 1207)),
+  pointTest(3, floor1Points[0].id, "iperf3_upload", iperf("upload", 263.4)),
+  pointTest(4, floor1Points[1].id, "iperf3_download", null, "failed"),
+];
+
 const src = {
   project,
   scope: { kind: "project", id: 1 },
   floors: [
-    { building, floor: floors[0], points: floor1Points, annotations: annotations(1, floor1Points), requirements, planData: tiny, photoData: new Map([[1, tiny]]) },
-    { building, floor: floors[1], points: floor2Points, annotations: annotations(2, floor2Points), requirements: null, planData: tiny, photoData: new Map([[2, tiny]]) },
+    { building, floor: floors[0], points: floor1Points, annotations: annotations(1, floor1Points), requirements, pointTests: floor1Tests, planData: tiny, photoData: new Map([[1, tiny]]) },
+    { building, floor: floors[1], points: floor2Points, annotations: annotations(2, floor2Points), requirements: null, pointTests: [], planData: tiny, photoData: new Map([[2, tiny]]) },
   ],
   aps: aps.map((a) => ({ ap: a, buildingId: 1, floorName: "Ground floor" })),
   findings,
@@ -250,6 +266,15 @@ check("every image is a data: URI", () => {
   for (const t of images) assert.match(attrs(t).find((a) => a.name === "href")?.value ?? "", /^data:image\/(png|jpeg|svg\+xml);base64,/, t.slice(0, 120));
   for (const t of tags.filter((x) => /^<use\s/i.test(x))) assert.match(attrs(t).find((a) => a.name === "href")?.value ?? "", /^#plan-\d+$/);
   for (const t of tags) for (const a of attrs(t)) if (["src", "href", "xlink:href", "srcset", "poster", "action"].includes(a.name)) assert.match(a.value, /^(data:|#)/, t.slice(0, 120));
+});
+
+check("speed per point: map labels and table, only where there are tests", () => {
+  assert.equal(html.split("<h3>Speed per point</h3>").length - 1, 1, "one floor has tests");
+  assert.ok(textOnly.includes("↓ 1207  ↑ 263"), "plan label with both speeds");
+  assert.ok(textOnly.includes("2.4 ms"), "gateway ping");
+  assert.ok(html.includes("<td>failed</td>"), "a download that didn't run says so");
+  assert.ok(html.includes("VHT&lt;b&gt; MCS 9"), "link text escaped");
+  assert.ok(!html.includes("VHT<b>"), "raw link text");
 });
 
 check("untrusted text is escaped", () => {

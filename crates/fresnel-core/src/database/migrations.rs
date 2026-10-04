@@ -331,6 +331,18 @@ fn all() -> Vec<M<'static>> {
             CREATE INDEX idx_tool_runs_kind ON tool_runs(kind, started_at);
             CREATE INDEX idx_tool_runs_point ON tool_runs(point_id) WHERE point_id IS NOT NULL;",
         ),
+        // v9 — speed targets in requirement profiles, judged on the points'
+        // active tests. NULL: the rule is off (every existing profile).
+        M::up(
+            "ALTER TABLE requirement_profiles ADD COLUMN min_download_mbps INTEGER
+                CHECK (min_download_mbps IS NULL OR min_download_mbps BETWEEN 1 AND 100000);
+            ALTER TABLE requirement_profiles ADD COLUMN min_upload_mbps INTEGER
+                CHECK (min_upload_mbps IS NULL OR min_upload_mbps BETWEEN 1 AND 100000);
+            ALTER TABLE requirement_profiles ADD COLUMN max_latency_ms INTEGER
+                CHECK (max_latency_ms IS NULL OR max_latency_ms BETWEEN 1 AND 10000);
+            ALTER TABLE requirement_profiles ADD COLUMN max_loss_pct INTEGER
+                CHECK (max_loss_pct IS NULL OR max_loss_pct BETWEEN 0 AND 100);",
+        ),
     ]
 }
 

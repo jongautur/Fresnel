@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, asApiError } from "../../api/tauri";
 import type { ApiError } from "../../types/wifi";
 import type { TestSettings } from "../../types/pointTests";
-import { TEST_SETTINGS_CHANGED } from "../../lib/pointTests";
+import { TEST_SETTINGS_CHANGED } from "../../lib/testSettings";
 import { navigate } from "../../lib/navigation";
 import { ErrorBanner } from "../ErrorBanner";
 import type {

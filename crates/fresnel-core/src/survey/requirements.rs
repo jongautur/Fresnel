@@ -13,7 +13,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::models::{MeasuringAdapter, PlacedAp, Sample, SurveyPoint};
+use super::models::{
+    MeasuringAdapter, PlacedAp, PointTest, PointTestResults, PointTestRole, PointTestStatus,
+    Sample, SurveyPoint,
+};
 use crate::error::{Result, WifiError};
 use crate::wifi::models::{Band, Capability};
 
@@ -67,7 +70,9 @@ impl Preset {
     /// and roaming-sensitive clients, a second AP a few dB weaker for
     /// roaming, and few co-channel APs above about −80/−85 dBm). They are
     /// starting points for the job, not a standard. No preset sets SNR:
-    /// many drivers (iwlwifi) and Windows report no noise floor.
+    /// many drivers (iwlwifi) and Windows report no noise floor. No preset
+    /// sets speed targets either: they depend on the site's internet and
+    /// LAN, not on the Wi-Fi design.
     pub fn values(self) -> Option<RequirementValues> {
         let v = |primary, secondary, cochannel: (u32, i32), bands: &[Band]| RequirementValues {
             primary_min_dbm: primary,
@@ -77,6 +82,7 @@ impl Preset {
             required_bands: bands.to_vec(),
             min_snr_db: None,
             max_util_pct: None,
+            ..RequirementValues::default()
         };
         match self {
             Preset::OfficeData => Some(v(-67, Some(-75), (2, -80), &[Band::Band5GHz])),
@@ -88,7 +94,7 @@ impl Preset {
 }
 
 /// The thresholds of a profile. `None` switches a rule off.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequirementValues {
     /// Strongest target BSSID must reach this.
@@ -104,6 +110,21 @@ pub struct RequirementValues {
     pub min_snr_db: Option<i32>,
     /// Maximum channel utilisation the serving AP advertises (BSS Load).
     pub max_util_pct: Option<i32>,
+    // Speed targets, from the point's active tests (the latest of each):
+    // iperf3 receiver averages and the gateway ping. A point without that
+    // test isn't evaluated on it.
+    /// iperf3 download (server → this computer), Mbit/s.
+    #[serde(default)]
+    pub min_download_mbps: Option<u32>,
+    /// iperf3 upload, Mbit/s.
+    #[serde(default)]
+    pub min_upload_mbps: Option<u32>,
+    /// Average round trip to the gateway, ms.
+    #[serde(default)]
+    pub max_latency_ms: Option<u32>,
+    /// Ping loss to the gateway, %.
+    #[serde(default)]
+    pub max_loss_pct: Option<u32>,
 }
 
 pub const REQUIRABLE_BANDS: [Band; 3] = [Band::Band2_4GHz, Band::Band5GHz, Band::Band6GHz];
@@ -149,6 +170,29 @@ impl RequirementValues {
         if self.max_util_pct.is_some_and(|v| !(0..=100).contains(&v)) {
             return Err(WifiError::InvalidInput(
                 "the maximum utilisation must be between 0 and 100 %".into(),
+            ));
+        }
+        for (v, what) in [
+            (self.min_download_mbps, "the download target"),
+            (self.min_upload_mbps, "the upload target"),
+        ] {
+            if v.is_some_and(|v| !(1..=100_000).contains(&v)) {
+                return Err(WifiError::InvalidInput(format!(
+                    "{what} must be between 1 and 100000 Mbit/s"
+                )));
+            }
+        }
+        if self
+            .max_latency_ms
+            .is_some_and(|v| !(1..=10_000).contains(&v))
+        {
+            return Err(WifiError::InvalidInput(
+                "the latency target must be between 1 and 10000 ms".into(),
+            ));
+        }
+        if self.max_loss_pct.is_some_and(|v| v > 100) {
+            return Err(WifiError::InvalidInput(
+                "the loss target must be between 0 and 100 %".into(),
             ));
         }
         let mut bands = self.required_bands.clone();
@@ -284,6 +328,10 @@ pub enum Rule {
     RequiredBand,
     Snr,
     Utilisation,
+    Download,
+    Upload,
+    Latency,
+    Loss,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -758,16 +806,128 @@ fn span(s: &Sample) -> (f64, f64, bool) {
     }
 }
 
-/// Evaluate every point and summarise.
+/// Evaluate every point and summarise. `tests`: the floor's point tests
+/// (any order), for the speed targets.
 pub fn evaluate_floor(
     profile: &RequirementProfile,
     building_aps: &[PlacedAp],
     points: &[SurveyPoint],
+    tests: &[PointTest],
 ) -> (Vec<PointEvaluation>, FloorSummary) {
     let evaluator = Evaluator::new(profile, building_aps);
-    let evals: Vec<PointEvaluation> = points.iter().map(|p| evaluator.evaluate(p)).collect();
+    let evals: Vec<PointEvaluation> = points
+        .iter()
+        .map(|p| {
+            let mut eval = evaluator.evaluate(p);
+            let mine: Vec<&PointTest> = tests.iter().filter(|t| t.point_id == p.id).collect();
+            let speed = evaluate_speed(&profile.values, &mine);
+            if speed.iter().any(|r| r.outcome == Outcome::Fail) {
+                eval.outcome = Outcome::Fail;
+            }
+            eval.rules.extend(speed);
+            eval
+        })
+        .collect();
     let summary = summarise(&evals, points);
     (evals, summary)
+}
+
+/// The speed rules the profile sets, judged on the latest finished test of
+/// each kind at the point (cancelled ones are ignored). No test, or one that
+/// failed to run (server unreachable), is "not evaluated", never a fail: it
+/// says nothing about the spot.
+pub fn evaluate_speed(values: &RequirementValues, tests: &[&PointTest]) -> Vec<RuleResult> {
+    let latest = |role: PointTestRole| {
+        tests
+            .iter()
+            .filter(|t| t.role == role && t.status != PointTestStatus::Cancelled)
+            .max_by_key(|t| (t.started_at, t.id))
+            .copied()
+    };
+    let mut out = Vec::new();
+    for (limit, rule_kind, role, what) in [
+        (
+            values.min_download_mbps,
+            Rule::Download,
+            PointTestRole::Iperf3Download,
+            "download",
+        ),
+        (
+            values.min_upload_mbps,
+            Rule::Upload,
+            PointTestRole::Iperf3Upload,
+            "upload",
+        ),
+    ] {
+        let Some(limit) = limit else { continue };
+        out.push(match latest(role) {
+            None => skipped(rule_kind, None, &format!("no {what} test at this point")),
+            Some(t) => match (&t.results, t.status) {
+                (Some(PointTestResults::Iperf3(r)), PointTestStatus::Ok) => {
+                    let mbps = (r.bits_per_second / 1e6) as f32;
+                    rule(
+                        rule_kind,
+                        mbps >= limit as f32,
+                        Some(mbps),
+                        Some(limit as f32),
+                        format!("{what} {mbps:.0} Mbit/s, target ≥ {limit} Mbit/s"),
+                    )
+                }
+                _ => skipped(
+                    rule_kind,
+                    None,
+                    &format!(
+                        "the {what} test didn't run: {}",
+                        t.error.as_deref().unwrap_or("no result")
+                    ),
+                ),
+            },
+        });
+    }
+    if values.max_latency_ms.is_some() || values.max_loss_pct.is_some() {
+        let ping = latest(PointTestRole::Gateway);
+        let result = ping.and_then(|t| match &t.results {
+            Some(PointTestResults::Ping(r)) => Some(r),
+            _ => None,
+        });
+        if let Some(limit) = values.max_latency_ms {
+            out.push(match (ping, result.and_then(|r| r.avg_ms)) {
+                (None, _) => skipped(Rule::Latency, None, "no gateway ping at this point"),
+                (Some(_), None) => skipped(Rule::Latency, None, "the gateway ping got no replies"),
+                (Some(_), Some(avg)) => rule(
+                    Rule::Latency,
+                    avg <= f64::from(limit),
+                    Some(avg as f32),
+                    Some(limit as f32),
+                    format!("gateway ping {avg:.1} ms avg, target ≤ {limit} ms"),
+                ),
+            });
+        }
+        if let Some(limit) = values.max_loss_pct {
+            out.push(match (ping, result) {
+                (None, _) => skipped(Rule::Loss, None, "no gateway ping at this point"),
+                (Some(t), None) => skipped(
+                    Rule::Loss,
+                    None,
+                    &format!(
+                        "the gateway ping didn't run: {}",
+                        t.error.as_deref().unwrap_or("no result")
+                    ),
+                ),
+                (Some(_), Some(r)) => rule(
+                    Rule::Loss,
+                    r.loss_percent <= f64::from(limit),
+                    Some(r.loss_percent as f32),
+                    Some(limit as f32),
+                    format!(
+                        "gateway ping loss {:.0} % ({}/{} answered), target ≤ {limit} %",
+                        r.loss_percent, r.received, r.sent
+                    ),
+                ),
+            });
+        }
+    }
+    out
 }
 
 pub fn summarise(evals: &[PointEvaluation], points: &[SurveyPoint]) -> FloorSummary {
@@ -1351,7 +1511,7 @@ mod tests {
             point(vec![s("00:11:11:11:11:01", 5180, Some(20), None)]),
         ];
         pts[2].adapter.id = AdapterId::linux("wlan1");
-        let (evals, sum) = evaluate_floor(&p, &[], &pts);
+        let (evals, sum) = evaluate_floor(&p, &[], &pts, &[]);
         assert_eq!(evals.len(), 3);
         assert_eq!(
             (sum.points, sum.passed, sum.failed, sum.not_evaluated),
@@ -1410,5 +1570,196 @@ mod tests {
             (json["kind"].as_str(), json["apId"].as_i64()),
             (Some("ap"), Some(3))
         );
+    }
+
+    mod speed {
+        use super::super::*;
+        use crate::nettools::iperf3::{Iperf3Direction, Iperf3Result, MeasuredBy};
+        use crate::nettools::{PingResult, ProbeMethod, ProbeOutcome};
+        use crate::survey::models::{LinkSnapshot, PointTestKind, PointTestMethod};
+        use crate::wifi::models::AdapterId;
+
+        fn test(
+            id: i64,
+            role: PointTestRole,
+            status: PointTestStatus,
+            results: Option<PointTestResults>,
+        ) -> PointTest {
+            PointTest {
+                id,
+                point_id: 1,
+                kind: if matches!(role, PointTestRole::Gateway) {
+                    PointTestKind::Ping
+                } else {
+                    PointTestKind::Iperf3
+                },
+                target: "192.168.1.10".into(),
+                role,
+                method: PointTestMethod::Iperf3Tcp,
+                status,
+                started_at: Utc::now() + chrono::Duration::seconds(id),
+                duration_ms: 1000,
+                adapter_id: AdapterId::linux("wlan0"),
+                link: LinkSnapshot::default(),
+                link_after: None,
+                roamed: None,
+                results,
+                error: (status == PointTestStatus::Failed).then(|| "server busy".into()),
+                error_hint: None,
+            }
+        }
+
+        fn iperf(direction: Iperf3Direction, mbps: f64) -> Option<PointTestResults> {
+            Some(PointTestResults::Iperf3(Iperf3Result {
+                version: 1,
+                direction,
+                server: "192.168.1.10:5201".into(),
+                streams: 4,
+                duration_s: 5,
+                omit_s: 1,
+                bits_per_second: mbps * 1e6,
+                receiver_bytes: 0,
+                receiver_seconds: 5.0,
+                measured_by: MeasuredBy::Server,
+                sender_bytes: None,
+                retransmits: None,
+                retransmits_source: None,
+                intervals: Vec::new(),
+            }))
+        }
+
+        fn ping(rtts: &[Option<f64>]) -> Option<PointTestResults> {
+            let probes = rtts
+                .iter()
+                .map(|r| match r {
+                    Some(rtt_ms) => ProbeOutcome::Reply { rtt_ms: *rtt_ms },
+                    None => ProbeOutcome::Timeout,
+                })
+                .collect();
+            Some(PointTestResults::Ping(PingResult::from_probes(
+                ProbeMethod::Icmp,
+                None,
+                None,
+                probes,
+            )))
+        }
+
+        fn targets() -> RequirementValues {
+            RequirementValues {
+                min_download_mbps: Some(300),
+                min_upload_mbps: Some(100),
+                max_latency_ms: Some(10),
+                max_loss_pct: Some(1),
+                ..RequirementValues::default()
+            }
+        }
+
+        fn outcome(rules: &[RuleResult], r: Rule) -> Outcome {
+            rules.iter().find(|x| x.rule == r).unwrap().outcome
+        }
+
+        #[test]
+        fn speed_targets_judge_the_latest_tests() {
+            let tests = [
+                test(
+                    1,
+                    PointTestRole::Iperf3Download,
+                    PointTestStatus::Ok,
+                    iperf(Iperf3Direction::Download, 120.0),
+                ),
+                // The newer download wins; the cancelled one after it is ignored.
+                test(
+                    2,
+                    PointTestRole::Iperf3Download,
+                    PointTestStatus::Ok,
+                    iperf(Iperf3Direction::Download, 450.0),
+                ),
+                test(
+                    3,
+                    PointTestRole::Iperf3Download,
+                    PointTestStatus::Cancelled,
+                    None,
+                ),
+                test(
+                    4,
+                    PointTestRole::Iperf3Upload,
+                    PointTestStatus::Ok,
+                    iperf(Iperf3Direction::Upload, 80.0),
+                ),
+                test(
+                    5,
+                    PointTestRole::Gateway,
+                    PointTestStatus::Ok,
+                    ping(&[Some(3.0), Some(5.0), None, Some(4.0)]),
+                ),
+            ];
+            let refs: Vec<&PointTest> = tests.iter().collect();
+            let rules = evaluate_speed(&targets(), &refs);
+            assert_eq!(rules.len(), 4);
+            assert_eq!(outcome(&rules, Rule::Download), Outcome::Pass);
+            assert_eq!(rules[0].measured, Some(450.0));
+            assert_eq!(outcome(&rules, Rule::Upload), Outcome::Fail);
+            assert_eq!(outcome(&rules, Rule::Latency), Outcome::Pass);
+            // 1 of 4 lost: 25 % > 1 %.
+            assert_eq!(outcome(&rules, Rule::Loss), Outcome::Fail);
+        }
+
+        #[test]
+        fn missing_or_failed_tests_are_not_evaluated() {
+            let failed = [test(
+                1,
+                PointTestRole::Iperf3Download,
+                PointTestStatus::Failed,
+                None,
+            )];
+            let refs: Vec<&PointTest> = failed.iter().collect();
+            let rules = evaluate_speed(&targets(), &refs);
+            assert_eq!(outcome(&rules, Rule::Download), Outcome::NotEvaluated);
+            assert!(
+                rules[0].detail.contains("server busy"),
+                "{}",
+                rules[0].detail
+            );
+            assert_eq!(outcome(&rules, Rule::Upload), Outcome::NotEvaluated);
+            assert_eq!(outcome(&rules, Rule::Latency), Outcome::NotEvaluated);
+            // No targets set: no speed rules at all.
+            assert!(evaluate_speed(&RequirementValues::default(), &refs).is_empty());
+            // A ping with no replies: loss is judged, latency isn't.
+            let silent = [test(
+                1,
+                PointTestRole::Gateway,
+                PointTestStatus::Failed,
+                ping(&[None, None]),
+            )];
+            let refs: Vec<&PointTest> = silent.iter().collect();
+            let rules = evaluate_speed(&targets(), &refs);
+            assert_eq!(outcome(&rules, Rule::Latency), Outcome::NotEvaluated);
+            assert_eq!(outcome(&rules, Rule::Loss), Outcome::Fail);
+        }
+
+        #[test]
+        fn speed_targets_are_validated() {
+            let ok = RequirementValues {
+                primary_min_dbm: -67,
+                ..targets()
+            };
+            assert!(ok.validated().is_ok());
+            for bad in [
+                RequirementValues {
+                    min_download_mbps: Some(0),
+                    ..ok.clone()
+                },
+                RequirementValues {
+                    max_latency_ms: Some(0),
+                    ..ok.clone()
+                },
+                RequirementValues {
+                    max_loss_pct: Some(101),
+                    ..ok.clone()
+                },
+            ] {
+                assert!(bad.validated().is_err(), "{bad:?}");
+            }
+        }
     }
 }

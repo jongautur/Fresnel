@@ -39,6 +39,10 @@ const blank = (presets: PresetInfo[]): RequirementProfileInput => {
       requiredBands: [],
       minSnrDb: null,
       maxUtilPct: null,
+      minDownloadMbps: null,
+      minUploadMbps: null,
+      maxLatencyMs: null,
+      maxLossPct: null,
     }),
   };
 };
@@ -54,6 +58,10 @@ const fromProfile = (p: RequirementProfile): RequirementProfileInput => ({
   requiredBands: p.requiredBands,
   minSnrDb: p.minSnrDb,
   maxUtilPct: p.maxUtilPct,
+  minDownloadMbps: p.minDownloadMbps,
+  minUploadMbps: p.minUploadMbps,
+  maxLatencyMs: p.maxLatencyMs,
+  maxLossPct: p.maxLossPct,
 });
 
 /** An optional rule: a checkbox that switches it on, and its number. */
@@ -361,6 +369,48 @@ export function RequirementProfileEditor({
           max={100}
           hint="As the AP advertises it (BSS Load element); judged only where the AP sends it"
           onChange={(v) => setValues({ maxUtilPct: v })}
+        />
+
+        <div className="field-label req-subhead">Speed (from the points' active tests)</div>
+        <OptionalNumber
+          label="Download at least"
+          unit="Mbit/s"
+          value={draft.minDownloadMbps}
+          fallback={100}
+          min={1}
+          max={100000}
+          hint="iperf3 download at the point (Measure Here with “+ run tests”); points without one aren't judged on it"
+          onChange={(v) => setValues({ minDownloadMbps: v })}
+        />
+        <OptionalNumber
+          label="Upload at least"
+          unit="Mbit/s"
+          value={draft.minUploadMbps}
+          fallback={50}
+          min={1}
+          max={100000}
+          hint="iperf3 upload at the point"
+          onChange={(v) => setValues({ minUploadMbps: v })}
+        />
+        <OptionalNumber
+          label="Latency at most"
+          unit="ms"
+          value={draft.maxLatencyMs}
+          fallback={20}
+          min={1}
+          max={10000}
+          hint="Average round trip of the gateway ping at the point"
+          onChange={(v) => setValues({ maxLatencyMs: v })}
+        />
+        <OptionalNumber
+          label="Loss at most"
+          unit="%"
+          value={draft.maxLossPct}
+          fallback={1}
+          min={0}
+          max={100}
+          hint="Gateway ping loss at the point"
+          onChange={(v) => setValues({ maxLossPct: v })}
         />
 
         <div>

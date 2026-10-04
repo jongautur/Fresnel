@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, asApiError } from "../api/tauri";
 import type { ApiError } from "../types/wifi";
 import type { Iperf3Directions, TestSettings } from "../types/pointTests";
-import { TEST_SETTINGS_CHANGED, patchTestSettings } from "../lib/pointTests";
+import { TEST_SETTINGS_CHANGED, patchTestSettings } from "../lib/testSettings";
 import { ErrorBanner } from "./ErrorBanner";
 import { KeyValueGrid, KV } from "./KeyValue";
 import { NumberInput } from "./NumberInput";

@@ -10,7 +10,8 @@
 import type { Band } from "../types/wifi";
 import type { FloorPlan, PlacedAp, Sample, SurveyPoint } from "../types/survey";
 
-export type HeatMetric = "signal" | "coverage" | "overlap" | "serving" | "requirements";
+/** "speed" draws no raster: it shows each point's measured speeds (active tests). */
+export type HeatMetric = "signal" | "coverage" | "overlap" | "serving" | "requirements" | "speed";
 
 export type NetworkFilter =
   | { kind: "any" }

@@ -1,7 +1,6 @@
 // Labels and summaries for active tests (tables, the Measure Here toggle).
 import type { LinkSnapshot, PointTest, PointTestRole, TestSettings } from "../types/pointTests";
 import { formatBitrate } from "./format";
-import { api } from "../api/tauri";
 
 export const ROLE_LABEL: Record<PointTestRole, string> = {
   gateway: "Gateway ping",
@@ -90,16 +89,86 @@ export function plannedTests(s: TestSettings): string {
   return parts.join(", ");
 }
 
-/** Tell open views that the active-test settings (incl. the iperf3 server) changed. */
-export const TEST_SETTINGS_CHANGED = "fresnel:test-settings-changed";
+// ---------------------------------------------------------------------------
+// Speed per point (the floor table and the plan's Speed view)
+// ---------------------------------------------------------------------------
+
+/** A throughput at a point: measured, the test failed to run, or no test. */
+export type Throughput = { mbps: number; retransmits: number | null } | "failed" | null;
+export type GatewayPing = { avgMs: number | null; jitterMs: number | null; lossPercent: number } | "failed" | null;
+
+export interface PointSpeed {
+  down: Throughput;
+  up: Throughput;
+  ping: GatewayPing;
+  /** The link when the point's tests started (the gateway ping's, else the first test's). */
+  link: LinkSnapshot | null;
+  tests: number;
+}
+
+/** The latest finished test of a role (cancelled ones don't count), as the requirement rules use. */
+function latest(tests: PointTest[], role: PointTestRole): PointTest | undefined {
+  let best: PointTest | undefined;
+  for (const t of tests) {
+    if (t.role !== role || t.status === "cancelled") continue;
+    if (!best || t.startedAt > best.startedAt || (t.startedAt === best.startedAt && t.id > best.id)) best = t;
+  }
+  return best;
+}
+
+function throughput(t: PointTest | undefined): Throughput {
+  if (!t) return null;
+  const r = t.results;
+  if (t.status !== "ok" || r?.type !== "iperf3") return "failed";
+  return { mbps: r.bitsPerSecond / 1e6, retransmits: r.retransmits };
+}
+
+/** Point id → its latest download, upload and gateway ping. */
+export function pointSpeeds(tests: PointTest[]): Map<number, PointSpeed> {
+  const byPoint = new Map<number, PointTest[]>();
+  for (const t of tests) byPoint.set(t.pointId, [...(byPoint.get(t.pointId) ?? []), t]);
+  const out = new Map<number, PointSpeed>();
+  for (const [id, list] of byPoint) {
+    const gw = latest(list, "gateway");
+    const r = gw?.results;
+    out.set(id, {
+      down: throughput(latest(list, "iperf3_download")),
+      up: throughput(latest(list, "iperf3_upload")),
+      ping: !gw
+        ? null
+        : r?.type === "ping"
+          ? { avgMs: r.avgMs, jitterMs: r.jitterMs, lossPercent: r.lossPercent }
+          : "failed",
+      link: (gw ?? list[0])?.link ?? null,
+      tests: list.length,
+    });
+  }
+  return out;
+}
+
+export const formatMbps = (mbps: number) => (mbps >= 100 ? mbps.toFixed(0) : mbps.toFixed(1));
+
+export type SpeedRule = "download" | "upload" | "latency" | "loss";
 
 /**
- * Save only some fields: re-read the stored settings first, so two cards
- * editing different parts of the same file don't undo each other.
+ * "↓ 1207  ↑ 1111" and "2.4 ms": what the plan shows under a point. Values
+ * that miss the profile's target get a ✗, so the colour isn't the only sign.
  */
-export async function patchTestSettings(patch: Partial<TestSettings>): Promise<TestSettings> {
-  const current = await api.getTestSettings();
-  const saved = await api.saveTestSettings({ ...current, ...patch });
-  window.dispatchEvent(new CustomEvent(TEST_SETTINGS_CHANGED));
-  return saved;
+export function speedLines(s: PointSpeed | undefined, failing: ReadonlySet<SpeedRule> = new Set()): string[] {
+  if (!s) return ["no tests"];
+  const x = (r: SpeedRule) => (failing.has(r) ? " ✗" : "");
+  const tp = (arrow: string, v: Throughput, r: SpeedRule) =>
+    v == null ? null : v === "failed" ? `${arrow} failed` : `${arrow} ${formatMbps(v.mbps)}${x(r)}`;
+  const first = [tp("↓", s.down, "download"), tp("↑", s.up, "upload")].filter(Boolean).join("  ");
+  const p = s.ping;
+  const second =
+    p == null
+      ? null
+      : p === "failed"
+        ? "ping failed"
+        : p.avgMs == null
+          ? "no ping replies"
+          : `${p.avgMs < 10 ? p.avgMs.toFixed(1) : p.avgMs.toFixed(0)} ms${x("latency")}${p.lossPercent > 0 || failing.has("loss") ? ` · ${p.lossPercent.toFixed(0)} % loss${x("loss")}` : ""}`;
+  const lines = [first, second].filter((l): l is string => !!l);
+  return lines.length ? lines : ["no speed tests"];
 }

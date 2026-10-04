@@ -24,8 +24,8 @@ import type { NotePin } from "../../types/notes";
 import { FindingsPanel } from "./FindingsPanel";
 import { ExportDialog } from "./ExportDialog";
 import { PointDetails } from "./PointDetails";
-import { PointTestsTable } from "./PointTestsTable";
-import { plannedTests } from "../../lib/pointTests";
+import { PointSpeedTable } from "./PointSpeedTable";
+import { plannedTests, pointSpeeds, speedLines, type SpeedRule } from "../../lib/pointTests";
 import { BANDS, HeatmapControls, METRICS, THRESHOLD_MAX, THRESHOLD_MIN } from "./HeatmapControls";
 import { PointRequirements, RequirementsLegend, RequirementsPanel } from "./RequirementsPanel";
 import {
@@ -307,7 +307,8 @@ export function FloorWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [floor.id, points, allAps, requirementsRev]);
+    // Point tests feed the speed targets.
+  }, [floor.id, points, allAps, requirementsRev, pointTests]);
   const reqProfile = requirements?.profile ?? null;
   // Coverage and overlap levels start at the profile's while one applies.
   const profileKey = reqProfile ? `${reqProfile.id}@${reqProfile.updatedAt}` : null;
@@ -460,12 +461,36 @@ export function FloorWorkspace({
   ).grid;
   const reqEval = (id: number) => requirements?.points.find((e) => e.pointId === id);
   const viewGrid = useHeatGrid((): HeatJob | null => {
-    if (!heatActive || !plan || metric === "requirements") return null;
+    if (!heatActive || !plan || metric === "requirements" || metric === "speed") return null;
     return metric === "serving"
       ? { kind: "serving", plan, ppm, inputs: serving, threshold: heatCfg.threshold }
       : { kind: "grid", plan, ppm, pts: heatPoints, cfg: heatCfg };
   }, [heatActive, plan, ppm, heatPoints, serving, cfgKey]).grid;
-  const heatGrid: HeatGrid | ServingGrid | null = !heatActive ? null : metric === "requirements" ? reqGrid : viewGrid;
+  const heatGrid: HeatGrid | ServingGrid | null =
+    !heatActive || metric === "speed" ? null : metric === "requirements" ? reqGrid : viewGrid;
+  // Speed view: measured values under each point, nothing between them.
+  const speeds = useMemo(() => pointSpeeds(pointTests), [pointTests]);
+  const speedTargets = reqProfile
+    ? [
+        reqProfile.minDownloadMbps != null && `↓ ≥ ${reqProfile.minDownloadMbps}`,
+        reqProfile.minUploadMbps != null && `↑ ≥ ${reqProfile.minUploadMbps} Mbit/s`,
+        reqProfile.maxLatencyMs != null && `ping ≤ ${reqProfile.maxLatencyMs} ms`,
+        reqProfile.maxLossPct != null && `loss ≤ ${reqProfile.maxLossPct} %`,
+      ].filter((t): t is string => !!t)
+    : [];
+  const pointNotes = useMemo(() => {
+    if (!heatActive || metric !== "speed") return undefined;
+    const m = new Map<number, { lines: string[]; tone: "pass" | "fail" | null }>();
+    for (const p of points) {
+      const speedRules = (requirements?.points.find((e) => e.pointId === p.id)?.rules ?? []).filter((r) =>
+        ["download", "upload", "latency", "loss"].includes(r.rule),
+      );
+      const failing = new Set(speedRules.filter((r) => r.outcome === "fail").map((r) => r.rule as SpeedRule));
+      const tone = failing.size > 0 ? "fail" : speedRules.some((r) => r.outcome === "pass") ? "pass" : null;
+      m.set(p.id, { lines: speedLines(speeds.get(p.id), failing), tone });
+    }
+    return m;
+  }, [heatActive, metric, points, speeds, requirements]);
   const fmtValue = (v: number) =>
     heatCfg.metric === "overlap"
       ? `${Math.round(v)} AP${Math.round(v) === 1 ? "" : "s"}`
@@ -473,7 +498,7 @@ export function FloorWorkspace({
         ? "not heard"
         : `${Math.round(v)} dBm`;
   const pointLabels = useMemo(() => {
-    if (!heatActive) return undefined;
+    if (!heatActive || metric === "speed") return undefined;
     const m = new Map<number, string>();
     if (metric === "requirements") {
       for (const p of points) m.set(p.id, outcomeMark(reqEval(p.id)));
@@ -496,7 +521,7 @@ export function FloorWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heatActive, heatPoints, requirements, cfgKey]);
   const hoverInfo = (p: PlanXY) => {
-    if (!heatActive || !plan) return null;
+    if (!heatActive || !plan || metric === "speed") return null;
     if (metric === "requirements") {
       const e = reqInputs && requirementsAt(reqInputs, p.x, p.y, influenceRadiusPx(plan, ppm));
       if (!e) return "no estimate (too far from points)";
@@ -862,6 +887,7 @@ export function FloorWorkspace({
           pxPerMetre={ppm}
           heat={heatGrid}
           pointLabels={showFindings && mode === "measure" && flagged ? flagged : pointLabels}
+          pointNotes={showFindings && mode === "measure" && flagged ? undefined : pointNotes}
           highlightIds={showFindings && mode === "measure" && flagged ? new Set(flagged.keys()) : null}
           aps={apMarkers}
           selectedApId={selectedApId}
@@ -1064,6 +1090,8 @@ export function FloorWorkspace({
                     heatGrid && "shares" in heatGrid ? { shares: heatGrid.shares, unserved: heatGrid.unserved } : null
                   }
                   apNameByBssid={apNameByBssid}
+                  speedTargets={speedTargets}
+                  speedPoints={speeds.size}
                   requirementsLegend={
                     reqProfile ? (
                       <RequirementsLegend
@@ -1213,10 +1241,16 @@ export function FloorWorkspace({
                 <section className="card">
                   <header className="card-header">
                     <h2>
-                      Active tests <span className="count">{pointTests.length}</span>
+                      Speed per point <span className="count">{speeds.size}</span>
                     </h2>
                   </header>
-                  <PointTestsTable tests={pointTests} pointNumbers={new Map(points.map((p, i) => [p.id, i + 1]))} />
+                  <PointSpeedTable
+                    tests={pointTests}
+                    pointIds={points.map((p) => p.id)}
+                    evaluations={requirements?.points ?? []}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                  />
                 </section>
               )}
             </>

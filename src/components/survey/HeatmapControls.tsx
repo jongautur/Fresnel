@@ -18,8 +18,13 @@ import {
 export const METRICS: { id: HeatMetric; label: string; title: string }[] = [
   { id: "signal", label: "Signal", title: "Signal strength of the chosen network (strongest BSSID at each spot)" },
   { id: "coverage", label: "Coverage", title: "Where the signal meets a target level" },
-  { id: "overlap", label: "AP overlap", title: "How many APs are heard above a level: 2+ helps roaming" },
+  {
+    id: "speed",
+    label: "Speed",
+    title: "Download, upload and gateway ping measured at each point (“+ run tests”); nothing is shaded between points",
+  },
   { id: "serving", label: "Serving AP", title: "Which placed access point is strongest at each spot" },
+  { id: "overlap", label: "AP overlap", title: "How many APs are heard above a level: 2+ helps roaming" },
   { id: "requirements", label: "Requirements", title: "Where the floor's requirement profile is met" },
 ];
 
@@ -75,6 +80,8 @@ export function HeatmapControls({
   servingShares,
   apNameByBssid,
   requirementsLegend,
+  speedTargets,
+  speedPoints,
 }: {
   metric: HeatMetric;
   setMetric: (m: HeatMetric) => void;
@@ -96,6 +103,10 @@ export function HeatmapControls({
   apNameByBssid: Map<string, string>;
   /** Legend for the Requirements view; null when no profile applies (view disabled). */
   requirementsLegend: ReactNode | null;
+  /** The profile's speed targets as text ("↓ ≥ 100 Mbit/s"); empty when it sets none. */
+  speedTargets: string[];
+  /** Points with at least one active test. */
+  speedPoints: number;
 }) {
   const servable = aps.filter((a) => a.ap.bssids.length > 0);
   const [lo, hi] = SIGNAL_DOMAIN;
@@ -132,7 +143,7 @@ export function HeatmapControls({
           <p className="muted small">Place access points and link their BSSIDs to compare them.</p>
         )}
         <div className="heat-fields">
-          {metric !== "serving" && metric !== "requirements" && (
+          {metric !== "serving" && metric !== "requirements" && metric !== "speed" && (
           <label>
             <span className="field-label">Network</span>
             <select
@@ -170,7 +181,7 @@ export function HeatmapControls({
             </select>
           </label>
           )}
-          {metric !== "requirements" && (
+          {metric !== "requirements" && metric !== "speed" && (
           <label>
             <span className="field-label">Band</span>
             <select className="input" value={band} onChange={(e) => setBand(e.target.value as Band | "all")}>
@@ -182,7 +193,7 @@ export function HeatmapControls({
             </select>
           </label>
           )}
-          {metric !== "signal" && metric !== "requirements" && (
+          {metric !== "signal" && metric !== "requirements" && metric !== "speed" && (
             <label>
               <span className="field-label">
                 {metric === "coverage" ? "Target" : metric === "serving" ? "Serves from" : "AP counts at"}
@@ -248,6 +259,32 @@ export function HeatmapControls({
 
         {metric === "requirements" && requirementsLegend}
 
+        {metric === "speed" && (
+          <div className="heat-legend">
+            <div className="heat-legend-note small">
+              Under each point: <span className="mono">↓ download ↑ upload</span> in Mbit/s (iperf3), then the gateway
+              ping in ms. The latest test of each kind counts.
+            </div>
+            {speedTargets.length > 0 ? (
+              <div className="heat-swatches">
+                <span>
+                  <i style={{ background: "#1f8f5a" }} /> meets {speedTargets.join(", ")}
+                </span>
+                <span>
+                  <i style={{ background: "#c92a2a" }} /> ✗ misses a target
+                </span>
+              </div>
+            ) : (
+              <div className="heat-legend-note muted small">Add speed targets to the requirement profile to colour points pass/fail.</div>
+            )}
+            <div className="heat-legend-note muted small">
+              {speedPoints === 0
+                ? "No point has active tests yet: turn on “+ run tests” next to Measure Here."
+                : `${speedPoints} point${speedPoints === 1 ? " has" : "s have"} tests. Speeds are measured at the points only; nothing is estimated between them.`}
+            </div>
+          </div>
+        )}
+
         {metric === "serving" && servingShares && (
           <div className="heat-legend">
             <div className="heat-swatches heat-swatches-list">
@@ -269,6 +306,7 @@ export function HeatmapControls({
           </div>
         )}
 
+        {metric !== "speed" && (
         <p className="muted small">
           Estimated between points (inverse-distance weighting); walls are not modelled. Shading stops{" "}
           {scaled ? "3 m" : "a short distance"} from the nearest point.
@@ -276,6 +314,7 @@ export function HeatmapControls({
           {excludedPoints > 0 &&
             ` ${excludedPoints} point${excludedPoints === 1 ? " has" : "s have"} no dBm readings and ${excludedPoints === 1 ? "is" : "are"} left out.`}
         </p>
+        )}
       </div>
     </section>
   );

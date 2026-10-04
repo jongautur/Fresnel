@@ -22,6 +22,11 @@ export interface RequirementValues {
   minSnrDb: number | null;
   /** Channel load the AP advertises (BSS Load). */
   maxUtilPct: number | null;
+  /** Speed targets, judged on the point's latest active tests (iperf3, gateway ping). */
+  minDownloadMbps: number | null;
+  minUploadMbps: number | null;
+  maxLatencyMs: number | null;
+  maxLossPct: number | null;
 }
 
 export type RequirementTarget = { kind: "ssid"; ssidRaw: number[] } | { kind: "ap"; apId: number };
@@ -62,7 +67,17 @@ export interface TargetOptions {
 }
 
 export type Outcome = "pass" | "fail" | "not_evaluated";
-export type Rule = "primary_signal" | "secondary_signal" | "co_channel" | "required_band" | "snr" | "utilisation";
+export type Rule =
+  | "primary_signal"
+  | "secondary_signal"
+  | "co_channel"
+  | "required_band"
+  | "snr"
+  | "utilisation"
+  | "download"
+  | "upload"
+  | "latency"
+  | "loss";
 
 export interface RuleResult {
   rule: Rule;

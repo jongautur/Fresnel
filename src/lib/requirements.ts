@@ -33,6 +33,10 @@ export const RULE_LABEL: Record<Rule, string> = {
   required_band: "Required band",
   snr: "SNR",
   utilisation: "Channel load",
+  download: "Download",
+  upload: "Upload",
+  latency: "Latency",
+  loss: "Loss",
 };
 
 export function ruleLabel(r: { rule: Rule; band: Band | null }): string {
@@ -47,6 +51,10 @@ export function describeValues(v: RequirementValues): string[] {
   if (v.requiredBands.length) out.push(`${v.requiredBands.map((b) => BAND_LABEL[b]).join(" + ")} required`);
   if (v.minSnrDb != null) out.push(`SNR ≥ ${v.minSnrDb} dB`);
   if (v.maxUtilPct != null) out.push(`load ≤ ${v.maxUtilPct} %`);
+  if (v.minDownloadMbps != null) out.push(`↓ ≥ ${v.minDownloadMbps} Mbit/s`);
+  if (v.minUploadMbps != null) out.push(`↑ ≥ ${v.minUploadMbps} Mbit/s`);
+  if (v.maxLatencyMs != null) out.push(`ping ≤ ${v.maxLatencyMs} ms`);
+  if (v.maxLossPct != null) out.push(`loss ≤ ${v.maxLossPct} %`);
   return out;
 }
 
@@ -65,11 +73,11 @@ export interface AreaInputs {
   secondary: HeatPoint[];
   /** Points with a co-channel count (primary heard), when the rule is on. */
   cochannel: HeatPoint[];
-  /** Point id → false when a yes/no rule (band, SNR, load) failed there. */
+  /** Point id → false when a yes/no rule (band, SNR, load, speed) failed there. */
   discrete: Map<number, boolean>;
 }
 
-const DISCRETE: Rule[] = ["required_band", "snr", "utilisation"];
+const DISCRETE: Rule[] = ["required_band", "snr", "utilisation", "download", "upload", "latency", "loss"];
 
 export function areaInputs(points: SurveyPoint[], evals: PointEvaluation[], profile: RequirementProfile): AreaInputs {
   const byId = new Map(evals.map((e) => [e.pointId, e]));

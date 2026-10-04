@@ -14,7 +14,8 @@ use crate::wifi::models::Band;
 
 const COLUMNS: &str = "p.id, p.project_id, p.name, p.preset, p.primary_min_dbm,
     p.secondary_min_dbm, p.cochannel_max, p.cochannel_level_dbm, p.required_bands,
-    p.min_snr_db, p.max_util_pct, p.is_default, p.created_at, p.updated_at";
+    p.min_snr_db, p.max_util_pct, p.is_default, p.created_at, p.updated_at,
+    p.min_download_mbps, p.min_upload_mbps, p.max_latency_ms, p.max_loss_pct";
 
 fn band_text(b: Band) -> &'static str {
     match b {
@@ -56,6 +57,10 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<RequirementProfile> {
             required_bands: bands_from_text(&bands),
             min_snr_db: r.get(9)?,
             max_util_pct: r.get(10)?,
+            min_download_mbps: r.get(14)?,
+            min_upload_mbps: r.get(15)?,
+            max_latency_ms: r.get(16)?,
+            max_loss_pct: r.get(17)?,
         },
         is_default: r.get(11)?,
         targets: Vec::new(),
@@ -218,8 +223,9 @@ impl Database {
         tx.execute(
             "INSERT INTO requirement_profiles (project_id, name, preset, primary_min_dbm,
                  secondary_min_dbm, cochannel_max, cochannel_level_dbm, required_bands,
-                 min_snr_db, max_util_pct, is_default, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+                 min_snr_db, max_util_pct, is_default, created_at, updated_at,
+                 min_download_mbps, min_upload_mbps, max_latency_ms, max_loss_pct)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14, ?15, ?16)",
             params![
                 project_id,
                 name,
@@ -233,6 +239,10 @@ impl Database {
                 values.max_util_pct,
                 is_default,
                 now,
+                values.min_download_mbps,
+                values.min_upload_mbps,
+                values.max_latency_ms,
+                values.max_loss_pct,
             ],
         )
         .map_err(|e| name_conflict(e, &name))?;
@@ -265,7 +275,8 @@ impl Database {
             "UPDATE requirement_profiles SET name = ?2, preset = ?3, primary_min_dbm = ?4,
                  secondary_min_dbm = ?5, cochannel_max = ?6, cochannel_level_dbm = ?7,
                  required_bands = ?8, min_snr_db = ?9, max_util_pct = ?10, is_default = ?11,
-                 updated_at = ?12
+                 updated_at = ?12, min_download_mbps = ?13, min_upload_mbps = ?14,
+                 max_latency_ms = ?15, max_loss_pct = ?16
              WHERE id = ?1",
             params![
                 id,
@@ -280,6 +291,10 @@ impl Database {
                 values.max_util_pct,
                 input.is_default,
                 now,
+                values.min_download_mbps,
+                values.min_upload_mbps,
+                values.max_latency_ms,
+                values.max_loss_pct,
             ],
         )
         .map_err(|e| name_conflict(e, &name))?;
@@ -422,7 +437,8 @@ impl Database {
         if let Some((profile, source)) = profile {
             let points = self.list_survey_points(floor_id)?;
             let aps = self.list_building_aps(building_id)?;
-            let (evals, summary) = evaluate_floor(&profile, &aps, &points);
+            let tests = self.list_floor_point_tests(floor_id)?;
+            let (evals, summary) = evaluate_floor(&profile, &aps, &points, &tests);
             result.profile = Some(profile);
             result.source = Some(source);
             result.points = evals;
@@ -625,9 +641,23 @@ mod tests {
         let mut edited = input("Voice", Preset::VoiceVideo);
         edited.values.primary_min_dbm = -60;
         edited.values.min_snr_db = Some(25);
+        edited.values.min_download_mbps = Some(300);
+        edited.values.min_upload_mbps = Some(100);
+        edited.values.max_latency_ms = Some(20);
+        edited.values.max_loss_pct = Some(0);
         let b2 = s.db.update_requirement_profile(b.id, &edited).unwrap();
         assert_eq!(b2.preset, Preset::Custom);
         assert_eq!(b2.values.min_snr_db, Some(25));
+        // Speed targets round-trip (schema v9).
+        assert_eq!(
+            (
+                b2.values.min_download_mbps,
+                b2.values.min_upload_mbps,
+                b2.values.max_latency_ms,
+                b2.values.max_loss_pct
+            ),
+            (Some(300), Some(100), Some(20), Some(0))
+        );
         assert!(!b2.is_default);
 
         assert!(s.db.delete_requirement_profile(a.id).unwrap());

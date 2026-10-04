@@ -38,6 +38,8 @@ import {
 } from "./heatmap";
 import type { HeatJob, HeatResult } from "./heatmapJobs";
 import { RULE_LABEL, areaInputs, describeValues, formatShare } from "./requirements";
+import type { PointTest } from "../types/pointTests";
+import { formatMbps, linkSummary, pointSpeeds, speedLines, type PointSpeed, type SpeedRule, type Throughput } from "./pointTests";
 
 export const REPORT_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'";
 /** Above this the UI warns before saving: large files are slow to open and print. */
@@ -157,6 +159,8 @@ export interface ReportFloor {
   points: SurveyPoint[];
   annotations: FloorAnnotations;
   requirements: FloorRequirements | null;
+  /** Active tests run at the floor's points (ping, iperf3). */
+  pointTests: PointTest[];
   /** The plan as stored, as a data: URI; null without a plan. */
   planData: string | null;
   /** Photo id → data: URI of its report copy. */
@@ -559,7 +563,8 @@ function signalLegend(): string {
 }
 
 /** Markers in plan coordinates, sized relative to the plan. */
-function markers(fr: FloorReport): string {
+/** `notes`: lines under each point (the speed map). */
+function markers(fr: FloorReport, notes?: Map<number, string[]>): string {
   const plan = fr.f.floor.plan!;
   const u = Math.max(plan.width, plan.height) / 110;
   const t = (n: number) => round(n, 1);
@@ -572,9 +577,15 @@ function markers(fr: FloorReport): string {
       );
   fr.f.points.forEach((p, i) => {
     const dead = p.samples.length === 0;
+    const lines = notes?.get(p.id) ?? [];
+    const note = lines.length
+      ? `<text y="${t(2.6 * u)}" text-anchor="middle" font-size="${t(1.6 * u)}" font-weight="bold" fill="#111" stroke="#fff" stroke-width="${t(u / 3)}" paint-order="stroke">` +
+        lines.map((l, k) => `<tspan x="0" dy="${k === 0 ? 0 : t(1.8 * u)}">${esc(l)}</tspan>`).join("") +
+        `</text>`
+      : "";
     parts.push(
       `<g transform="translate(${t(p.x)} ${t(p.y)})"><circle r="${t(0.8 * u)}" fill="${dead ? STATUS_CRITICAL : "#1f2933"}" stroke="#fff" stroke-width="${t(u / 5)}"/>` +
-        `<text y="${t(0.32 * u)}" text-anchor="middle" font-size="${t(0.85 * u)}" fill="#fff">${i + 1}</text></g>`,
+        `<text y="${t(0.32 * u)}" text-anchor="middle" font-size="${t(0.85 * u)}" fill="#fff">${i + 1}</text>${note}</g>`,
     );
   });
   for (const pin of fr.f.annotations.pins)
@@ -588,13 +599,20 @@ const MARKER_LEGEND =
   `<span>${swatch("#1f2933", "circle")}Survey point (number)</span><span>${swatch(STATUS_CRITICAL, "circle")}Nothing heard</span>` +
   `<span><svg width="10" height="10" aria-hidden="true"><path d="M5 0L10 10H0Z" fill="#eda100"/></svg>Note pin</span><span>${swatch("#2a78d6")}Access point (colour per AP)</span>`;
 
-function mapFigure(fr: FloorReport, title: string, caption: string, heat: string | null, legend: string): string {
+function mapFigure(
+  fr: FloorReport,
+  title: string,
+  caption: string,
+  heat: string | null,
+  legend: string,
+  notes?: Map<number, string[]>,
+): string {
   const plan = fr.f.floor.plan!;
   const planRef = fr.f.planData ? `<use href="#plan-${fr.f.floor.id}"/>` : "";
   const heatImg = heat ? `<image href="${esc(heat)}" width="${plan.width}" height="${plan.height}" preserveAspectRatio="none"/>` : "";
   return (
     `<figure><figcaption><b>${esc(title)}.</b> ${caption}</figcaption>` +
-    `<svg class="map" viewBox="0 0 ${plan.width} ${plan.height}" role="img" aria-label="${esc(title)}">${planRef}${heatImg}${markers(fr)}</svg>` +
+    `<svg class="map" viewBox="0 0 ${plan.width} ${plan.height}" role="img" aria-label="${esc(title)}">${planRef}${heatImg}${markers(fr, notes)}</svg>` +
     `<div class="legend">${legend}${MARKER_LEGEND}</div></figure>`
   );
 }
@@ -674,6 +692,8 @@ function floorSection(src: ReportSource, fr: FloorReport): string {
     }
   }
 
+  out.push(speedSection(fr));
+
   // Notes, pins, photos
   const a = f.annotations;
   const notes: string[] = [];
@@ -695,6 +715,66 @@ function floorSection(src: ReportSource, fr: FloorReport): string {
   if (photos.length) notes.push(`<div class="photos">${photos.join("")}</div>`);
   if (notes.length) out.push(`<h3>Notes and photos</h3>${notes.join("")}`);
   out.push(`</section>`);
+  return out.join("");
+}
+
+/** Speeds measured at the points: a map with the values under each point, and a table. */
+function speedSection(fr: FloorReport): string {
+  const { f } = fr;
+  if (!f.pointTests.length) return "";
+  const speeds = pointSpeeds(f.pointTests);
+  const evals = new Map((f.requirements?.points ?? []).map((e) => [e.pointId, e]));
+  const speedRules = (id: number) =>
+    (evals.get(id)?.rules ?? []).filter((r) => ["download", "upload", "latency", "loss"].includes(r.rule));
+  const failing = (id: number) => new Set(speedRules(id).filter((r) => r.outcome === "fail").map((r) => r.rule as SpeedRule));
+  const out: string[] = [`<h3>Speed per point</h3>`];
+  if (f.floor.plan && f.points.length) {
+    const notes = new Map(f.points.filter((p) => speeds.has(p.id)).map((p) => [p.id, speedLines(speeds.get(p.id), failing(p.id))]));
+    out.push(
+      mapFigure(
+        fr,
+        "Speed",
+        "Measured at each point (the latest test of each kind): ↓ download and ↑ upload in Mbit/s (iperf3, the receiver's average), then the average gateway ping in ms. Nothing is estimated between points; ✗ marks a value that misses the profile's target.",
+        null,
+        "",
+        notes,
+      ),
+    );
+  }
+  const num = new Map(f.points.map((p, i) => [p.id, i + 1]));
+  const ms = (v: number) => `${v < 10 ? v.toFixed(1) : v.toFixed(0)} ms`;
+  const tp = (t: Throughput, failed: boolean) =>
+    t == null ? "—" : t === "failed" ? "failed" : `${formatMbps(t.mbps)}${failed ? " ✗" : ""}`;
+  const rows = [...speeds.entries()]
+    .sort((a, b) => (num.get(a[0]) ?? 0) - (num.get(b[0]) ?? 0))
+    .map(([id, s]) => {
+      const fails = failing(id);
+      const rules = speedRules(id);
+      const p = s.ping;
+      const ping = p == null ? "—" : p === "failed" || p.avgMs == null ? "no reply" : `${ms(p.avgMs)}${fails.has("latency") ? " ✗" : ""}`;
+      const loss = p && p !== "failed" ? `${p.lossPercent.toFixed(0)} %${fails.has("loss") ? " ✗" : ""}` : "—";
+      const verdict = fails.size ? "misses" : rules.some((r) => r.outcome === "pass") ? "meets" : "—";
+      return (
+        `<tr><td>${num.get(id) ?? "?"}</td><td>${tp(s.down, fails.has("download"))}</td><td>${tp(s.up, fails.has("upload"))}</td>` +
+        `<td>${ping}</td><td>${loss}</td><td>${s.link?.signalDbm != null ? `${Math.round(s.link.signalDbm)} dBm` : "—"}</td>` +
+        `<td>${esc(s.link ? linkSummary({ ...s.link, signalDbm: null }) : "—")}</td><td>${verdict}</td></tr>`
+      );
+    });
+  const values = (pick: (s: PointSpeed) => number | null) =>
+    [...speeds.values()].map(pick).filter((v): v is number => v != null).sort((a, b) => a - b);
+  const range = (vs: number[], fmt: (v: number) => string) =>
+    !vs.length
+      ? "not measured"
+      : vs.length === 1
+        ? `${fmt(vs[0]!)} (one point)`
+        : `${fmt(vs[0]!)} to ${fmt(vs[vs.length - 1]!)} (median ${fmt(vs[Math.floor((vs.length - 1) / 2)]!)})`;
+  const down = values((s) => (s.down && s.down !== "failed" ? s.down.mbps : null));
+  const up = values((s) => (s.up && s.up !== "failed" ? s.up.mbps : null));
+  const ping = values((s) => (s.ping && s.ping !== "failed" ? s.ping.avgMs : null));
+  out.push(
+    `<p>Download ${range(down, (v) => `${formatMbps(v)} Mbit/s`)}; upload ${range(up, (v) => `${formatMbps(v)} Mbit/s`)}; gateway ping ${range(ping, ms)}.</p>` +
+      `<table><tr><th>Point</th><th>↓ Mbit/s</th><th>↑ Mbit/s</th><th>Ping</th><th>Loss</th><th>Signal</th><th>Link</th><th>Targets</th></tr>${rows.join("")}</table>`,
+  );
   return out.join("");
 }
 

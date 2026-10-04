@@ -90,6 +90,7 @@ export function PlanCanvas({
   pxPerMetre,
   heat,
   pointLabels,
+  pointNotes,
   highlightIds = null,
   hoverInfo,
   aps = [],
@@ -117,6 +118,8 @@ export function PlanCanvas({
   heat?: HeatGrid | null;
   /** Value shown beside each point marker (heatmap mode). */
   pointLabels?: Map<number, string>;
+  /** Lines shown under each point marker (the Speed view), and whether the point passes its targets. */
+  pointNotes?: Map<number, { lines: string[]; tone: "pass" | "fail" | null }>;
   /** Points to emphasise (others are dimmed), e.g. where a finding was heard. */
   highlightIds?: Set<number> | null;
   /** Extra hover readout for a plan position (e.g. the estimated value). */
@@ -429,8 +432,9 @@ export function PlanCanvas({
             const flag = highlightIds ? (highlightIds.has(p.id) ? "flagged" : "dim") : "";
             const cls = `plan-point ${heat ? "heat" : ""} ${mode === "aps" ? "dim" : flag} ${p.id === selectedId ? "selected" : ""} ${p.id === hoverPoint && mode === "measure" ? "hovered" : ""}`;
             const label = pointLabels?.get(p.id);
+            const note = pointNotes?.get(p.id);
             return (
-              <g key={p.id} className={cls}>
+              <g key={p.id} className={`${cls} ${note?.tone ? `tone-${note.tone}` : ""}`}>
                 <circle className="halo" cx={s.x} cy={s.y} r={POINT_R + 2} />
                 <circle cx={s.x} cy={s.y} r={POINT_R} />
                 <text x={s.x} y={s.y} dy="0.35em" textAnchor="middle">
@@ -439,6 +443,15 @@ export function PlanCanvas({
                 {label && (
                   <text className="plan-point-value" x={s.x + POINT_R + 4} y={s.y} dy="0.35em">
                     {label}
+                  </text>
+                )}
+                {note && (
+                  <text className="plan-point-note" x={s.x} y={s.y + POINT_R + 13} textAnchor="middle">
+                    {note.lines.map((line, k) => (
+                      <tspan key={k} x={s.x} dy={k === 0 ? 0 : 13}>
+                        {line}
+                      </tspan>
+                    ))}
                   </text>
                 )}
               </g>
