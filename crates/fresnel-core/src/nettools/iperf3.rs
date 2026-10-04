@@ -292,6 +292,8 @@ enum StartFailure {
         error: WifiError,
         refused: bool,
     },
+    /// The connection failed otherwise (timed out, unreachable).
+    Connect(WifiError),
     Fatal(WifiError),
 }
 
@@ -325,7 +327,8 @@ async fn start(
                             refused: true,
                         }
                     }
-                    other => StartFailure::Fatal(connect_error(config.server, other)),
+                    ConnectError::Bind(e) => StartFailure::Fatal(e),
+                    other => StartFailure::Connect(connect_error(config.server, other)),
                 })?;
             let cookie = make_cookie();
             write_all(&mut control, &cookie, t.control, "the start of the test")
@@ -360,6 +363,10 @@ async fn start(
         };
         match failure {
             StartFailure::Fatal(e) => return Err(e.into()),
+            // On a retry, a server that no longer answers at all (Windows
+            // reports a closed port as a timeout after ~2 s of retries) is
+            // gone: report what the first attempt learned.
+            StartFailure::Connect(e) => return Err(reported.unwrap_or(e).into()),
             StartFailure::Retry { error, refused } => {
                 if reported.is_none() || !refused {
                     reported = Some(error);
