@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/branding/logo-dark.svg">
+    <img src="docs/branding/logo-light.svg" alt="Fresnel" width="320">
+  </picture>
+</p>
+
 # Fresnel
 
 Native desktop tool for Wi-Fi analysis and site surveys, for Linux and Windows.

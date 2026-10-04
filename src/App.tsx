@@ -6,7 +6,7 @@ import { Networks } from "./pages/Networks";
 import { Survey } from "./pages/Survey";
 import { Settings, type Theme } from "./pages/Settings";
 import { Tools } from "./pages/Tools";
-import { IconLive, IconNetworks, IconSettings, IconSurvey, IconTools } from "./components/Icons";
+import { BrandMark, IconLive, IconNetworks, IconSettings, IconSurvey, IconTools } from "./components/Icons";
 import { StatusDot } from "./components/StatusDot";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { api } from "./api/tauri";
@@ -94,7 +94,7 @@ export default function App() {
       <div className="app">
         <nav className="sidebar">
           <div className="brand">
-            <span className="brand-mark">◉</span>
+            <BrandMark className="brand-mark" />
             <span>Fresnel</span>
           </div>
           {NAV.map(({ id, label, icon: Icon }) => (

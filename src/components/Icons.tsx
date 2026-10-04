@@ -41,3 +41,12 @@ export const IconAlert = (p: P) => (
 export const IconTools = (p: P) => (
   <svg {...base(p)}><path d="M4 17l6-6M4 7l6 6" /><path d="M13 17h7" /><path d="M13 7h7M16 12h4" /></svg>
 );
+
+/** Fresnel's mark (docs/branding/mark-small.svg): the radio path between two endpoints. */
+export const BrandMark = (p: SVGProps<SVGSVGElement>) => (
+  <svg width={24} height={16} viewBox="64 208 896 608" aria-hidden="true" {...p}>
+    <ellipse cx="512" cy="512" rx="390" ry="250" fill="none" stroke="#3fa3ff" strokeWidth="80" />
+    <circle cx="152" cy="512" r="76" fill="#2ec4b6" />
+    <circle cx="872" cy="512" r="76" fill="#2ec4b6" />
+  </svg>
+);
