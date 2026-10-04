@@ -1,0 +1,60 @@
+name: Hardware report (testers)
+description: How Fresnel works on your Wi-Fi card and OS. Successes are as useful as failures.
+title: "Hardware report: <adapter> on <OS>"
+labels: ["hardware report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing. The 15-minute test is in the README under
+        [Help test Fresnel](https://github.com/jongautur/Fresnel#help-test-fresnel).
+        Fill in what you tried; leave the rest empty.
+  - type: input
+    id: adapter
+    attributes:
+      label: Wi-Fi adapter and driver
+      description: Model, driver and its version. Internal or USB?
+      placeholder: Realtek RTL8852BE, rtw89_8852be (internal)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: Windows 11 24H2 / Ubuntu 24.04 / Fedora 41 (GNOME, Wayland)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Fresnel version and package
+      placeholder: 0.5.0, .exe installer / .deb / AppImage / built from source
+    validations:
+      required: true
+  - type: checkboxes
+    id: worked
+    attributes:
+      label: What worked
+      options:
+        - label: Live lists the adapter and the networks around me
+        - label: Signal values look right (compared with a phone app, netsh or nmcli)
+        - label: Channels, widths and bands look right (incl. 6 GHz if you have it)
+        - label: Survey, plan import, scale and Measure here
+        - label: Heatmaps
+        - label: '"+ run tests" (ping / iperf3) at survey points'
+        - label: Tools page (ping, traceroute, DNS, port check, iperf3)
+        - label: Report export
+        - label: Install / upgrade / uninstall
+  - type: textarea
+    id: problems
+    attributes:
+      label: What didn't work or looked wrong
+      description: Exact error text, which values looked off, and what you compared them with.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Settings › Copy diagnostics, then paste here.
+      render: text
+    validations:
+      required: true

@@ -5,151 +5,130 @@
   </picture>
 </p>
 
-# Fresnel
+<p align="center">
+  <b>Wi-Fi analysis, site surveys and network tools for Linux and Windows.</b><br>
+  Free and open source. No account, no cloud, no internet needed.
+</p>
 
-Native desktop tool for Wi-Fi analysis and site surveys, for Linux and Windows.
-Tauri 2 · Rust · React/TypeScript · SQLite. Fully offline.
-Linux reads Wi-Fi through NetworkManager (D-Bus) and nl80211; Windows uses the
-Native Wifi API. Both operate entirely offline.
+<p align="center">
+  <a href="https://github.com/jongautur/Fresnel/releases">Download</a> ·
+  <a href="https://fresnel.gitstuff.dev/">Website</a> ·
+  <a href="ROADMAP.md">Roadmap</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-**Status: v0.3**: adapter discovery, BSSID scanning with real dBm (nl80211),
-current connection with TX/RX link rates, channel overlap map, dBm / % display setting.
-Survey: projects → buildings → floors, floor plan import (PNG/JPEG/SVG) with a two-point
-scale, **Measure Here** points stored in SQLite, access points marked on the plan with their
-BSSIDs, and heatmaps (signal per network or AP, coverage vs. a target, AP overlap, serving AP).
-Active tests come later.
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+<!-- Screenshots: add docs/screenshots/live.png, survey.png and tools.png and link them here. -->
 
-## Prerequisites (Ubuntu/Debian)
+> **Testers wanted.** Fresnel is young (0.5) and needs reports from real hardware: different
+> Wi-Fi cards, drivers, Windows and Linux versions. A 15-minute test helps a lot; see
+> [Help test Fresnel](#help-test-fresnel).
 
-```bash
-sudo apt install build-essential curl wget file pkg-config libssl-dev \
-  libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # Rust toolchain
-# Node.js ≥ 20 + npm
-npm install
-```
+## What it does
 
-On Linux, NetworkManager must be running. Scanning uses the polkit action
-`org.freedesktop.NetworkManager.wifi.scan`, which is allowed by default for
-users in an active local session. No root is needed.
+**See the air**
+- Every access point in range: SSID, BSSID, signal in dBm, channel, width, band, PHY
+  (Wi-Fi 4–7), security and BSS load, plus your own connection and its link rates.
+- A channel overlap map for 2.4, 5 and 6 GHz.
 
-On Windows: Rust (MSVC toolchain) and Node.js ≥ 20; WebView2 comes with Windows 10/11.
+**Survey a site**
+- Projects, buildings and floors. Import a floor plan (PNG, JPEG, SVG), set its scale, walk,
+  and press **Measure here** at each spot.
+- Heatmaps: signal per network or access point, coverage against a target, AP overlap and
+  serving AP, interpolated between your points.
+- Mark your access points on the plan and link the BSSIDs they broadcast.
+- Requirement profiles ("Office data", "Voice / video", or your own) turn readings into pass or
+  fail per point, with the reason, including speed targets.
+- Speed where you stand: ping and iperf3 after each measurement, shown under every point on
+  the plan and in one table per floor.
+- Rogue and evil-twin detection: transmitters using your SSIDs that aren't your access points,
+  and copies of your network with weaker security.
+- Notes and photos on points, APs and pins. A report that prints to A4 PDF; CSV and JSON exports.
 
-## Run
+**Troubleshoot the network** (the Tools page)
+- Ping, traceroute / MTR, DNS lookup (compare up to five servers), port check and iperf3,
+  all with live results and a history. No admin rights needed.
 
-```bash
-npm run tauri dev
-```
+## Principles
 
-From the integrated terminal of the **snap** build of VS Code, use
-`scripts/clean-snap-env.sh npm run tauri dev`. Otherwise GTK picks up snap
-libraries and crashes with `symbol lookup error … /snap/core20/…`.
+- **Real numbers.** dBm comes from the driver. A quality percentage is never passed off as dBm,
+  and what the hardware doesn't report is left empty, not estimated.
+- **Fresh measurements only.** A survey point stores what a new scan heard at that spot,
+  never the cache from a minute ago.
+- **Estimates are labelled.** Heatmaps interpolate between measured points and say so; speeds are
+  shown only where they were measured.
+- **Offline and local.** Everything is stored on your computer. Fresnel contacts nothing
+  unless you type its address into a tool.
 
-Logging: `RUST_LOG=fresnel_core=debug npm run tauri dev`. Logs also go to daily
-`fresnel.YYYY-MM-DD.log` files in the app log folder (Linux: `~/.local/share/io.fresnel.app/logs/`,
-Windows: `%LOCALAPPDATA%\io.fresnel.app\logs\`), panics included. **Settings → Copy diagnostics**
-puts versions, OS, adapters, database state and recent log lines on the clipboard for bug reports.
+## Download
 
-## Without the GUI
+From the [latest release](https://github.com/jongautur/Fresnel/releases):
 
-The core crate has no Tauri/WebKit dependency, so it can be exercised directly against real hardware:
+| | File | Notes |
+|---|---|---|
+| Windows 10/11 | `Fresnel_<version>_x64-setup.exe` | Per-user install, no admin. Not code-signed yet: SmartScreen may warn ("More info" → "Run anyway"). Windows needs Location turned on (including for desktop apps) to list access points. |
+| Ubuntu / Debian | `Fresnel_<version>_amd64.deb` | `sudo apt install ./Fresnel_*_amd64.deb`. Needs NetworkManager. |
+| Other Linux | `Fresnel_<version>_amd64.AppImage` | `chmod +x` and run. Ubuntu 24.04 without `libfuse2`: add `--appimage-extract-and-run`. Needs NetworkManager. |
 
-```bash
-cargo run -p fresnel-core --example probe            # adapters, connection, cached BSSIDs
-cargo run -p fresnel-core --example probe -- --scan  # trigger a fresh scan
-cargo test -p fresnel-core
-```
+Checksums are in `SHA256SUMS`. Releases are marked pre-release until the Windows build has
+passed testing on real hardware.
 
-## Package
+**Known issue:** on Windows 11 with Smart App Control on, the unsigned uninstaller is blocked.
+Code signing will fix it.
 
-```bash
-npm run tauri build                     # AppImage + .deb  → target/release/bundle/
-npm run tauri build -- --bundles deb    # just the .deb
-```
+## Help test Fresnel
 
-Bundle settings per OS live in `src-tauri/tauri.linux.conf.json` and `tauri.windows.conf.json`
-(NSIS, per-user install, offline WebView2).
-Flatpak isn't targeted on purpose: future monitor-mode and USB-probe access conflicts with its sandbox.
+The most useful thing right now is a report from your hardware. It takes about 15 minutes:
 
-## CI and releases
+1. Install the latest release and open **Live**: does it list your adapter and the networks
+   around you? Compare a few with your phone or `netsh wlan show networks mode=bssid` /
+   `nmcli dev wifi`.
+2. Open **Survey**, create a project, import any floor plan image and set the scale.
+   Take five **Measure here** points around a room and look at the heatmaps.
+3. Try the **Tools** page: ping your router, trace a route to `1.1.1.1`, look up a name.
+4. Export the floor report (**Export…** in the survey toolbar).
+5. In **Settings**, press **Copy diagnostics** and paste it into a
+   [hardware report](https://github.com/jongautur/Fresnel/issues/new?template=hardware_report.yml),
+   with what worked and what didn't.
 
-Every push and PR runs `.github/workflows/ci.yml` on Ubuntu 22.04 and Windows:
-`npm run build`, `npm run test:report` (the exported report stays inert and escapes SSIDs),
-`cargo fmt --check`, `cargo clippy -D warnings` and `cargo test`.
-`npm run bench:heatmap` times the heatmap grids (not in CI).
-The Windows leg is allowed to fail until the Linux-only adapters are gated.
-Toolchain: `rust-toolchain.toml`; the minimum Rust is `rust-version` in `Cargo.toml`.
+We especially need: Intel, MediaTek, Realtek and Qualcomm cards, USB Wi-Fi adapters,
+Windows 10, Fedora and Arch, and 6 GHz (Wi-Fi 6E/7) networks.
 
-The version lives in `Cargo.toml` (`[workspace.package]`); Tauri takes it from there.
-`package.json` must match, which `scripts/check-version.sh [vX.Y.Z]` checks. To release:
+Found a bug? Open a [bug report](https://github.com/jongautur/Fresnel/issues/new?template=bug_report.yml).
+Questions and ideas go to [Discussions](https://github.com/jongautur/Fresnel/discussions).
 
-```bash
-# bump Cargo.toml, then:
-npm version --no-git-tag-version 0.4.0 && cargo update --workspace
-scripts/check-version.sh v0.4.0
-git tag v0.4.0 && git push origin v0.4.0
-```
+## How it gets the data
 
-The tag runs `.github/workflows/release.yml`: CI, then `.deb`, AppImage and NSIS installer
-with `SHA256SUMS` in a **draft** release. Publish it after checking the builds on a clean machine.
-v0.3.0 predates the workflows; v0.4.0 is the first CI-built release.
+**Linux:** NetworkManager (D-Bus) triggers scans and supplies the BSS list and connection
+state. The kernel's nl80211 interface (read-only, no root) adds real dBm, supported bands
+(including 6 GHz), PHY generation, BSS load and TX/RX link rates. If a driver can't report dBm,
+signal falls back to NetworkManager's 0–100 % quality, always labelled as %. Scanning uses the
+polkit action `org.freedesktop.NetworkManager.wifi.scan`, allowed by default for users in a
+local session.
 
-## Layout
+**Windows:** the Native Wifi API reports dBm and % side by side. Fresnel rejects drivers that
+synthesise dBm from %, and leaves fields Windows doesn't report (noise, MCS, spatial streams)
+empty.
 
-| Path | What |
-|---|---|
-| `crates/fresnel-core/src/adapters/` | Hardware providers behind the `WifiAdapterProvider` trait (NetworkManager on Linux; Windows planned) |
-| `crates/fresnel-core/src/wifi/` | Normalised models, channel math, provider-agnostic `Scanner` |
-| `crates/fresnel-core/src/database/` | SQLite + versioned migrations, project/survey repositories |
-| `crates/fresnel-core/src/survey/` | Survey models, floor plan file store, Measure Here |
-| `src-tauri/` | Thin Tauri shell: app state and IPC commands |
-| `src/` | React UI (`api/tauri.ts` is the only file that calls the backend) |
+**Measure here** triggers a fresh scan and stores only the BSSIDs heard during it, with the
+adapter and model that took them. Scans that heard only the connected network, or lost dBm for
+some BSSIDs, count as incomplete and are retried; if the Wi-Fi service keeps declining, nothing is
+saved and the app says so.
 
-## Where the data comes from
+**Heatmaps** interpolate dBm between points (inverse-distance weighting). A network not heard at
+a point counts as not heard there, so a strong neighbour can't paint signal where it was
+measurably absent. Shading stops 3 m from the nearest point. Walls aren't modelled, so measure
+on both sides of walls that matter.
 
-On Linux, NetworkManager triggers scans and supplies the BSS list, connection state and
-security. The kernel's nl80211 interface (read-only, no root) adds real **dBm**,
-supported bands (incl. 6 GHz), monitor-mode support, PHY generation, BSS Load and
-TX/RX link rates. Noise is shown only on drivers that report it (not iwlwifi).
+**Your data** lives in the app data folder (`~/.local/share/io.fresnel.app/`;
+Windows: `%LOCALAPPDATA%\io.fresnel.app\`): the SQLite database, floor plans and photos. The
+database is backed up before every schema upgrade (`fresnel.db.bak-v…`, last three kept). A
+newer Fresnel's database can't be opened by an older one.
 
-- If the driver can't report dBm, signal falls back to NM's 0–100 % quality, always
-  labelled as %.
-- NM remembers BSSes for minutes; the kernel only ~30 s. Entries the kernel no longer
-  has show % instead of dBm, and the **Seen** column dims rows older than 30 s.
+## Building and contributing
 
-On Windows, Native Wifi (`WlanScan`, `WlanGetNetworkBssList`) reports dBm and % side
-by side. Fresnel rejects drivers that synthesize dBm from %, and leaves fields Windows
-doesn't report empty rather than estimating them. Windows may require both Location
-services and desktop-app Location access for BSSIDs; see [Windows hardware testing](docs/windows-testing.md).
-
-## Survey measurements
-
-**Measure Here** triggers a fresh scan and stores only the BSSIDs heard *during* that
-scan (raw dBm, %, channel, width, centre, SSID, security, PHY), plus which adapter and
-model took them. The backend's cache is never saved as a measurement:
-
-- If the Wi-Fi service declines the scan, Fresnel retries; after a few attempts it saves nothing
-  and says so.
-- Scans that heard only the connected network (while others were in range moments ago), or
-  that lost dBm for some BSSIDs, count as incomplete and are retried.
-- Scans on one adapter are spaced as the provider requires: at least 5.5 s with
-  NetworkManager, because on NetworkManager + iwlwifi scans started sooner often heard only
-  the associated AP. Settings shows the spacing for the selected adapter.
-
-**Heatmaps** (toolbar → Heatmap) interpolate the points' dBm with inverse-distance
-weighting. A network not heard at a point counts as "not heard" there (−100 dBm), so a
-strong neighbour can't paint signal where it was measurably absent. Shading stops 3 m from
-the nearest point. Walls aren't modelled, so measure on both sides of walls that matter.
-
-**Access points** (toolbar → Access points): click where an AP is mounted and link the BSSIDs it
-broadcasts. Fresnel pre-selects the strongest group of BSSIDs sharing a base MAC near that spot.
-Names then appear in point readings and the heatmap. A BSSID belongs to one AP per building.
-
-Floor plans are copied into the app data folder (`~/.local/share/io.fresnel.app/floorplans/`;
-Windows: `%LOCALAPPDATA%\io.fresnel.app\floorplans\`), next to `fresnel.db`. Before a schema
-upgrade the database is backed up next to itself (`fresnel.db.bak-v…`, last 3 kept); a damaged
-database is set aside as `fresnel.db.corrupt-…` and a new one started, with a notice in the app. Point coordinates are plan pixels; metres come from the floor's scale line.
+Fresnel is Rust (core and Tauri 2 shell) and React/TypeScript (UI). Build instructions,
+tests and how to send changes are in [CONTRIBUTING.md](CONTRIBUTING.md); the design is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); what's next is in [ROADMAP.md](ROADMAP.md).
 
 ## License
 

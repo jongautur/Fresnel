@@ -1,0 +1,56 @@
+name: Bug report
+description: Something doesn't work or shows wrong values.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The diagnostics (Settings › **Copy diagnostics**) tell us the version, OS,
+        adapters and recent log lines, so please paste them below.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Include the exact error text.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Survey, import a plan
+        2. Press Measure here
+        3. ...
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Ubuntu / Debian
+        - Fedora
+        - Arch
+        - Other Linux
+    validations:
+      required: true
+  - type: input
+    id: adapter
+    attributes:
+      label: Wi-Fi adapter and driver
+      description: Model and driver version (Device Manager on Windows; `lspci -k` or `lsusb` on Linux).
+      placeholder: Intel AX211, iwlwifi / MediaTek MT7925, driver 5.4.0.1920
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Settings › Copy diagnostics, then paste here.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, `netsh wlan show networks mode=bssid` or `nmcli dev wifi` output to compare with, etc.
