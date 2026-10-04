@@ -12,6 +12,20 @@ pub fn frequency_khz_to_mhz(khz: u32) -> Option<u32> {
     (khz != 0 && khz.is_multiple_of(1000)).then_some(khz / 1000)
 }
 
+/// The primary frequency for the connection's channel number, used when the
+/// associated BSS has aged out of the BSS list (Windows drops idle entries
+/// within minutes, the connected one included). Native Wifi doesn't give the
+/// band: 1–14 are taken as 2.4 GHz, and 5 GHz channels divisible by 4 can't
+/// be 6 GHz ones (those are 1 mod 4). 149–177 stay ambiguous.
+pub fn frequency_for_channel(channel: u16) -> Option<u32> {
+    match channel {
+        1..=13 => Some(2407 + u32::from(channel) * 5),
+        14 => Some(2484),
+        32..=144 if channel.is_multiple_of(4) => Some(5000 + u32::from(channel) * 5),
+        _ => None,
+    }
+}
+
 /// `ullHostTimestamp` is FILETIME (100 ns ticks since 1601). Only expose an
 /// age which is credible for a current scan; a few drivers return another
 /// clock domain or zero.
@@ -40,9 +54,10 @@ pub fn ie_range(offset: u32, size: u32, allocation_size: usize) -> Option<std::o
     (end <= allocation_size).then_some(start..end)
 }
 
-/// Native Wifi rates are documented in bits per second. Zero means unknown.
-pub fn rate_bps_to_kbps(rate_bps: u32) -> Option<u32> {
-    (rate_bps != 0).then_some(rate_bps / 1_000)
+/// Native Wifi association rates are in kbit/s: an MT7925 on 802.11be
+/// reports 2_882_400 where netsh shows 2882.4 Mbps. Zero means unknown.
+pub fn rate_kbps(rate: u32) -> Option<u32> {
+    (rate != 0).then_some(rate)
 }
 
 /// PHY types only prove some bands. HT/HE/EHT are multi-band, so they must
@@ -74,6 +89,17 @@ mod tests {
         assert_eq!(ie_range(21, 4, 24), None);
     }
     #[test]
+    fn channel_fallback_only_maps_unambiguous_channels() {
+        assert_eq!(frequency_for_channel(6), Some(2437));
+        assert_eq!(frequency_for_channel(14), Some(2484));
+        assert_eq!(frequency_for_channel(36), Some(5180));
+        assert_eq!(frequency_for_channel(64), Some(5320));
+        assert_eq!(frequency_for_channel(144), Some(5720));
+        assert_eq!(frequency_for_channel(149), None);
+        assert_eq!(frequency_for_channel(37), None);
+        assert_eq!(frequency_for_channel(0), None);
+    }
+    #[test]
     fn rejects_derived_rssi() {
         assert!(rssi_is_quality_derived(&[(-75, 50), (-70, 60), (-60, 80)]));
         assert!(!rssi_is_quality_derived(&[(-75, 50), (-69, 60), (-60, 80)]));
@@ -87,8 +113,8 @@ mod tests {
     }
     #[test]
     fn rates_and_phy_band_evidence_are_honest() {
-        assert_eq!(rate_bps_to_kbps(866_700_000), Some(866_700));
-        assert_eq!(rate_bps_to_kbps(0), None);
+        assert_eq!(rate_kbps(2_882_400), Some(2_882_400));
+        assert_eq!(rate_kbps(0), None);
         assert_eq!(
             band_capability_from_phys(&[6], Band::Band2_4GHz),
             Capability::Supported

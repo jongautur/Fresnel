@@ -25,8 +25,8 @@ use windows::Win32::Networking::WinSock::{AF_INET, SOCKADDR_IN};
 
 use super::traits::WifiAdapterProvider;
 use super::windows_convert::{
-    band_capability_from_phys, filetime_age_ms, frequency_khz_to_mhz, ie_range, rate_bps_to_kbps,
-    rssi_is_quality_derived,
+    band_capability_from_phys, filetime_age_ms, frequency_for_channel, frequency_khz_to_mhz,
+    ie_range, rate_kbps, rssi_is_quality_derived,
 };
 use crate::error::{Result, WifiError};
 use crate::wifi::channel::{band_for_frequency, channel_center_mhz, channel_for_frequency};
@@ -145,9 +145,14 @@ impl WindowsProvider {
                 None => "Driver RSSI is derived from quality; showing % only.".into(),
             });
         }
+        let connected = self
+            .retry_invalid(|h| connected_bss(h, &interface.guid))
+            .ok()
+            .flatten()
+            .map(|(bssid, _)| bssid);
         let aps = entries
             .into_iter()
-            .map(|b| observation(&id, b, derived))
+            .map(|b| observation(&id, b, derived, connected))
             .collect();
         Ok(ScanResult {
             adapter_id: id,
@@ -274,6 +279,10 @@ impl WindowsProvider {
     }
     fn adapter(&self, i: Interface) -> Result<Adapter> {
         let radio_off = radio_off(&*self.handle()?, &i.guid).unwrap_or(false);
+        let connected_ssid = connected_bss(&*self.handle()?, &i.guid)
+            .ok()
+            .flatten()
+            .and_then(|(_, ssid)| ssid);
         Ok(Adapter {
             id: AdapterId::windows(&guid_string(&i.guid)),
             provider: PROVIDER_ID.into(),
@@ -291,7 +300,7 @@ impl WindowsProvider {
                 state(i.state)
             },
             status_detail: radio_off.then_some("Wi-Fi radio is switched off".into()),
-            connected_ssid: None,
+            connected_ssid,
             scan_spacing_ms: None,
         })
     }
@@ -491,7 +500,7 @@ fn current_connection(
                 .find(|b| b.bssid == assoc.dot11Bssid)
                 .and_then(|b| frequency_khz_to_mhz(b.frequency_khz))
         })
-        .or_else(|| channel.and_then(frequency_for_channel_windows));
+        .or_else(|| channel.and_then(frequency_for_channel));
     let (ipv4_addresses, ipv4_gateway) = ipv4_for_guid(&guid_string(&interface.guid));
     Ok(Some(ConnectionInfo {
         adapter_id: id.clone(),
@@ -506,9 +515,9 @@ fn current_connection(
             dbm: rssi.map(|v| v as f32),
             quality_percent: quality,
         },
-        bitrate_kbps: rate_bps_to_kbps(assoc.ulTxRate).or_else(|| rate_bps_to_kbps(assoc.ulRxRate)),
+        bitrate_kbps: rate_kbps(assoc.ulTxRate).or_else(|| rate_kbps(assoc.ulRxRate)),
         tx_rate: Some(LinkRate {
-            bitrate_kbps: rate_bps_to_kbps(assoc.ulTxRate),
+            bitrate_kbps: rate_kbps(assoc.ulTxRate),
             phy: Some(phy_name(assoc.dot11PhyType).into()),
             mcs: None,
             nss: None,
@@ -516,7 +525,7 @@ fn current_connection(
             short_gi: None,
         }),
         rx_rate: Some(LinkRate {
-            bitrate_kbps: rate_bps_to_kbps(assoc.ulRxRate),
+            bitrate_kbps: rate_kbps(assoc.ulRxRate),
             phy: Some(phy_name(assoc.dot11PhyType).into()),
             mcs: None,
             nss: None,
@@ -527,6 +536,21 @@ fn current_connection(
         ipv4_addresses,
         ipv4_gateway,
     }))
+}
+/// The BSSID and SSID of the current association, if connected.
+fn connected_bss(handle: &WlanHandle, guid: &GUID) -> Result<Option<([u8; 6], Option<String>)>> {
+    let attributes = query_value::<WLAN_CONNECTION_ATTRIBUTES>(
+        handle,
+        guid,
+        wlan_intf_opcode_current_connection,
+        "reading current Wi-Fi connection",
+    )?;
+    Ok(attributes
+        .filter(|a| a.isState == wlan_interface_state_connected)
+        .map(|a| {
+            let assoc = a.wlanAssociationAttributes;
+            (assoc.dot11Bssid, ssid_text(&assoc.dot11Ssid))
+        }))
 }
 fn query_value<T: Copy>(
     handle: &WlanHandle,
@@ -568,15 +592,6 @@ fn native_security(value: WLAN_SECURITY_ATTRIBUTES) -> Security {
     };
     security
 }
-fn frequency_for_channel_windows(channel: u16) -> Option<u32> {
-    // Native Wifi doesn't identify the band. Prefer the unambiguous 2.4 GHz
-    // mapping; 5/6 GHz channel numbers need a BSS entry to disambiguate.
-    match channel {
-        1..=13 => Some(2407 + u32::from(channel) * 5),
-        14 => Some(2484),
-        _ => None,
-    }
-}
 fn ssid_text(ssid: &DOT11_SSID) -> Option<String> {
     let raw = &ssid.ucSSID[..(ssid.uSSIDLength as usize).min(32)];
     (!raw.is_empty() && !raw.iter().all(|b| *b == 0))
@@ -599,8 +614,12 @@ fn ipv4_for_guid(guid: &str) -> (Vec<String>, Option<String>) {
     }
     let mut adapter = bytes.as_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
     while let Some(item) = unsafe { adapter.as_ref() } {
+        // AdapterName is the GUID in braces; `guid` has none.
         let name = unsafe { std::ffi::CStr::from_ptr(item.AdapterName.0.cast()) }.to_string_lossy();
-        if name.eq_ignore_ascii_case(guid.trim_matches(['{', '}'])) {
+        if name
+            .trim_matches(['{', '}'])
+            .eq_ignore_ascii_case(guid.trim_matches(['{', '}']))
+        {
             return ipv4_from_adapter(item);
         }
         adapter = item.Next;
@@ -640,7 +659,12 @@ impl Drop for WlanMemory {
         }
     }
 }
-fn observation(id: &AdapterId, b: Bss, derived: bool) -> AccessPointObservation {
+fn observation(
+    id: &AdapterId,
+    b: Bss,
+    derived: bool,
+    connected: Option<[u8; 6]>,
+) -> AccessPointObservation {
     let frequency_mhz = frequency_khz_to_mhz(b.frequency_khz).unwrap_or_default();
     let elements = summarise(&b.ies);
     let span = elements.channel_span(frequency_mhz);
@@ -670,7 +694,7 @@ fn observation(id: &AdapterId, b: Bss, derived: bool) -> AccessPointObservation 
         mode: WifiMode::Infrastructure,
         max_bitrate_kbps: None,
         last_seen_age_ms: filetime_age_ms(b.host_time, SystemTime::now()),
-        is_connected: false,
+        is_connected: connected == Some(b.bssid),
         noise_dbm: None,
         snr_db: None,
         channel_utilization_pct: elements.channel_utilization_pct(),
